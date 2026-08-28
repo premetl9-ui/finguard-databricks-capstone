@@ -12,119 +12,115 @@ from tools import Actor, TOOL_REGISTRY
 MODEL = os.getenv("FINGUARD_MODEL_ENDPOINT", "databricks-meta-llama-3-3-70b-instruct")
 HIGH_IMPACT_TOOLS = {"escalate_alert", "resolve_alert", "update_alert_status"}
 
+
+def _schema(name: str, description: str, properties: dict[str, Any], required: list[str] | None = None):
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {
+                "type": "object",
+                "properties": properties,
+                "required": required or [],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
 TOOL_SCHEMAS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "get_alert",
-            "description": "Retrieve one FinGuard fraud alert by alert ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {"alert_id": {"type": "string"}},
-                "required": ["alert_id"],
-                "additionalProperties": False,
-            },
+    _schema(
+        "get_alert",
+        "Retrieve one FinGuard fraud alert by alert ID.",
+        {"alert_id": {"type": "string"}},
+        ["alert_id"],
+    ),
+    _schema(
+        "list_open_alerts",
+        "List open, assigned, or escalated FinGuard alerts.",
+        {"limit": {"type": "integer", "minimum": 1, "maximum": 200}},
+    ),
+    _schema(
+        "get_transaction",
+        "Retrieve a risk-scored transaction from the governed Gold Delta table.",
+        {"transaction_id": {"type": "string"}},
+        ["transaction_id"],
+    ),
+    _schema(
+        "get_customer_transactions",
+        "Retrieve recent risk-scored transactions for one customer.",
+        {
+            "customer_id": {"type": "string"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 200},
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "list_open_alerts",
-            "description": "List open, assigned, or escalated FinGuard alerts.",
-            "parameters": {
-                "type": "object",
-                "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 200}},
-                "additionalProperties": False,
-            },
+        ["customer_id"],
+    ),
+    _schema(
+        "get_customer_risk_profile",
+        "Retrieve the customer's Gold risk profile and behavioral summary.",
+        {"customer_id": {"type": "string"}},
+        ["customer_id"],
+    ),
+    _schema(
+        "get_exchange_rate",
+        "Retrieve the latest cached FX rate from Silver. Do not call the third-party API directly.",
+        {
+            "from_currency": {"type": "string", "minLength": 3, "maxLength": 3},
+            "to_currency": {"type": "string", "minLength": 3, "maxLength": 3},
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_investigation",
-            "description": "Open an investigation for an alert.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "alert_id": {"type": "string"},
-                    "summary": {"type": "string", "maxLength": 4000},
-                },
-                "required": ["alert_id"],
-                "additionalProperties": False,
-            },
+        ["from_currency"],
+    ),
+    _schema(
+        "get_investigation_notes",
+        "Retrieve existing investigation notes for an alert.",
+        {"alert_id": {"type": "string"}},
+        ["alert_id"],
+    ),
+    _schema(
+        "create_investigation",
+        "Open an investigation for an alert.",
+        {
+            "alert_id": {"type": "string"},
+            "summary": {"type": "string", "maxLength": 4000},
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "assign_alert",
-            "description": "Assign an alert to an analyst. Analysts can only self-assign.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "alert_id": {"type": "string"},
-                    "analyst_id": {"type": "string"},
-                },
-                "required": ["alert_id", "analyst_id"],
-                "additionalProperties": False,
-            },
+        ["alert_id"],
+    ),
+    _schema(
+        "assign_alert",
+        "Assign an alert to an analyst. Analysts can only self-assign.",
+        {"alert_id": {"type": "string"}, "analyst_id": {"type": "string"}},
+        ["alert_id", "analyst_id"],
+    ),
+    _schema(
+        "add_investigation_note",
+        "Add an audit-trailed note to an existing investigation.",
+        {
+            "investigation_id": {"type": "string"},
+            "note": {"type": "string", "minLength": 1, "maxLength": 8000},
         },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "add_investigation_note",
-            "description": "Add an audit-trailed note to an existing investigation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "investigation_id": {"type": "string"},
-                    "note": {"type": "string", "minLength": 1, "maxLength": 8000},
-                },
-                "required": ["investigation_id", "note"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "escalate_alert",
-            "description": "Escalate an alert. This is a high-impact action and requires user confirmation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "alert_id": {"type": "string"},
-                    "reason": {"type": "string", "minLength": 1},
-                },
-                "required": ["alert_id", "reason"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "resolve_alert",
-            "description": "Resolve an alert. This is a high-impact action and requires user confirmation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "alert_id": {"type": "string"},
-                    "resolution": {"type": "string", "minLength": 1},
-                },
-                "required": ["alert_id", "resolution"],
-                "additionalProperties": False,
-            },
-        },
-    },
+        ["investigation_id", "note"],
+    ),
+    _schema(
+        "escalate_alert",
+        "Escalate an alert. This high-impact action requires explicit analyst confirmation.",
+        {"alert_id": {"type": "string"}, "reason": {"type": "string", "minLength": 1}},
+        ["alert_id", "reason"],
+    ),
+    _schema(
+        "resolve_alert",
+        "Resolve an alert. This high-impact action requires explicit analyst confirmation.",
+        {"alert_id": {"type": "string"}, "resolution": {"type": "string", "minLength": 1}},
+        ["alert_id", "resolution"],
+    ),
 ]
 
 SYSTEM_PROMPT = """You are the FinGuard investigation assistant.
-Ground conclusions in tool results. Never invent transaction, alert, customer, or investigation data.
+Ground conclusions in tool results. Never invent transaction, alert, customer, investigation, or market data.
 Use only the provided allowlisted tools. Never generate or request arbitrary SQL.
+Use cached Silver FX data rather than calling a third-party API from the chat path.
 Explain risk factors clearly and keep financial-monitoring language factual.
-For escalation, resolution, or general status mutation, request confirmation rather than claiming the action happened unless the tool result confirms success.
+For escalation or resolution, request confirmation rather than claiming the action happened unless the tool result confirms success.
 """
 
 
@@ -133,7 +129,8 @@ def _client() -> OpenAI:
     token = os.getenv("DATABRICKS_TOKEN")
     if not base_url or not token:
         raise RuntimeError(
-            "Set DATABRICKS_OPENAI_BASE_URL and DATABRICKS_TOKEN (or map your Databricks App resource to these variables)."
+            "Set DATABRICKS_OPENAI_BASE_URL and DATABRICKS_TOKEN, or map the equivalent "
+            "Databricks App/AI Gateway resource credentials to these variables."
         )
     return OpenAI(api_key=token, base_url=base_url)
 
@@ -190,11 +187,7 @@ def chat(
         )
 
     if assistant.tool_calls:
-        final = client.chat.completions.create(
-            model=MODEL,
-            messages=messages,
-            temperature=0.1,
-        )
+        final = client.chat.completions.create(model=MODEL, messages=messages, temperature=0.1)
         text = final.choices[0].message.content or ""
     else:
         text = assistant.content or ""
