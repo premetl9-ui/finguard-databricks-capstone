@@ -21,7 +21,7 @@ finguard-databricks-capstone/
 ├── .gitignore
 ├── requirements.txt
 ├── docs/
-│   ├── FinGuard_Detailed_Capstone_Project_Document_Updated.docx
+│   ├── FinGuard_Detailed_Capstone_Project_Document_Updated.pdf
 │   ├── FinGuard_Architecture_Diagram.png
 │   ├── architecture.md
 │   ├── implementation_details.md
@@ -58,6 +58,8 @@ finguard-databricks-capstone/
 ## Required Revision Implementation Choices
 
 The implementation details requested after proposal review are documented in [`docs/implementation_details.md`](docs/implementation_details.md). They define the selected Streamlit frontend/service layer, Lakebase-to-Delta CDC plan, Structured Streaming runtime configuration, checkpointing and idempotent alert writes, Delta clustering and Lakebase indexes, and the Databricks-hosted LLM/tool-calling guardrail approach.
+
+The final proposal is maintained as PDF at `docs/FinGuard_Detailed_Capstone_Project_Document_Updated.pdf` rather than as an editable Word document.
 
 ## High-Level Workflow
 
