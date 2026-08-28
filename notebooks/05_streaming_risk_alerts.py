@@ -75,7 +75,6 @@ def score_batch(df):
 
 def write_alert_partition(rows):
     """One PostgreSQL connection per Spark partition; transaction_id makes writes idempotent."""
-    import json
     import psycopg
 
     database_url = os.getenv("DATABASE_URL")
@@ -90,7 +89,12 @@ def write_alert_partition(rows):
             password=os.getenv("PGPASSWORD"),
         )
 
-    sql = """
+    customer_sql = """
+    INSERT INTO customers (customer_id)
+    VALUES (%s)
+    ON CONFLICT (customer_id) DO NOTHING
+    """
+    alert_sql = """
     INSERT INTO fraud_alerts (
         transaction_id, customer_id, risk_score, risk_level, alert_reason, status
     ) VALUES (%s, %s, %s, %s, %s, 'OPEN')
@@ -105,8 +109,9 @@ def write_alert_partition(rows):
     try:
         with conn.cursor() as cur:
             for row in rows:
+                cur.execute(customer_sql, (row.customer_id,))
                 cur.execute(
-                    sql,
+                    alert_sql,
                     (
                         row.transaction_id,
                         row.customer_id,
@@ -124,7 +129,6 @@ def process_microbatch(batch_df, batch_id: int):
     if batch_df.isEmpty():
         return
 
-    # The Silver quality contract prevents rows with missing FX rates from reaching this path.
     batch_df = batch_df.filter(F.col("data_quality_status").isin("VALID", "STALE_FX_RATE"))
     scored = score_batch(batch_df).persist()
 
@@ -143,7 +147,6 @@ def process_microbatch(batch_df, batch_id: int):
     if not alerts.isEmpty():
         alerts.foreachPartition(write_alert_partition)
 
-    # Simple latency evidence for the capstone demo.
     latency = scored.select(
         F.expr("percentile_approx(unix_timestamp(scored_at) - unix_timestamp(event_timestamp), 0.95)").alias(
             "p95_seconds"
