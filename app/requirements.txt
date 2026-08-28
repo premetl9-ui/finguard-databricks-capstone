@@ -1,0 +1,6 @@
+streamlit>=1.40,<2
+psycopg[binary]>=3.2,<4
+openai>=1.50,<2
+pandas>=2.2,<3
+databricks-sdk>=0.60,<1
+databricks-sql-connector>=4.0,<5
