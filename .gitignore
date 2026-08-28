@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Secrets / local config
+.env
+.env.*
+config/config.yaml
+*.pem
+*.key
+
+# Databricks local state
+.databricks/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+
+# Build
+build/
+dist/
+*.egg-info/
