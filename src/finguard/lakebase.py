@@ -59,21 +59,29 @@ def upsert_fraud_alert(
     risk_level: str,
     alert_reason: str,
 ) -> dict[str, Any]:
-    sql = """
-    INSERT INTO fraud_alerts (
-        transaction_id, customer_id, risk_score, risk_level, alert_reason, status
-    ) VALUES (%s, %s, %s, %s, %s, 'OPEN')
-    ON CONFLICT (transaction_id)
-    DO UPDATE SET
-        risk_score = EXCLUDED.risk_score,
-        risk_level = EXCLUDED.risk_level,
-        alert_reason = EXCLUDED.alert_reason,
-        updated_at = CURRENT_TIMESTAMP
-    RETURNING *
-    """
+    """Idempotently create/update a fraud alert and ensure its customer FK exists."""
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
-            sql,
+            """
+            INSERT INTO customers (customer_id)
+            VALUES (%s)
+            ON CONFLICT (customer_id) DO NOTHING
+            """,
+            (customer_id,),
+        )
+        cur.execute(
+            """
+            INSERT INTO fraud_alerts (
+                transaction_id, customer_id, risk_score, risk_level, alert_reason, status
+            ) VALUES (%s, %s, %s, %s, %s, 'OPEN')
+            ON CONFLICT (transaction_id)
+            DO UPDATE SET
+                risk_score = EXCLUDED.risk_score,
+                risk_level = EXCLUDED.risk_level,
+                alert_reason = EXCLUDED.alert_reason,
+                updated_at = CURRENT_TIMESTAMP
+            RETURNING *
+            """,
             (transaction_id, customer_id, risk_score, risk_level, alert_reason),
         )
         row = cur.fetchone()
@@ -106,8 +114,8 @@ def record_agent_action(
                 investigation_id,
                 tool_name,
                 action_type,
-                json.dumps(request_payload or {}),
-                json.dumps(result_payload or {}),
+                json.dumps(request_payload or {}, default=str),
+                json.dumps(result_payload or {}, default=str),
                 status,
             ),
         )
