@@ -1,0 +1,9 @@
+# Deploy the repository root as the Databricks App source so app/, agent/, and src/
+# are available to the Streamlit process.
+command:
+  - streamlit
+  - run
+  - app/app.py
+  - --server.address=0.0.0.0
+  - --server.port=8000
+  - --server.headless=true
