@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import sys
 from dataclasses import dataclass
@@ -11,7 +10,7 @@ SRC = os.path.join(REPO_ROOT, "src")
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from finguard import lakebase  # noqa: E402
+from finguard import lakebase, lakehouse  # noqa: E402
 
 
 class AuthorizationError(PermissionError):
@@ -24,6 +23,7 @@ class ValidationError(ValueError):
 
 ROLE_ORDER = {"ANALYST": 1, "SENIOR_ANALYST": 2, "ADMIN": 3}
 VALID_ALERT_STATUSES = {"OPEN", "ASSIGNED", "ESCALATED", "RESOLVED", "CLOSED"}
+CATALOG = os.getenv("FINGUARD_CATALOG", "finguard")
 
 
 @dataclass(frozen=True)
@@ -48,6 +48,9 @@ def get_user_by_email(email: str) -> Actor:
     return Actor(user_id=str(row["user_id"]), email=row["email"], role=row["role"])
 
 
+# -----------------------------
+# Read-only tools
+# -----------------------------
 def get_alert(actor: Actor, alert_id: str) -> dict[str, Any]:
     row = lakebase.fetch_one(
         """
@@ -79,6 +82,48 @@ def list_open_alerts(actor: Actor, limit: int = 50) -> list[dict[str, Any]]:
     )
 
 
+def get_transaction(actor: Actor, transaction_id: str) -> dict[str, Any]:
+    row = lakehouse.get_transaction(CATALOG, transaction_id)
+    if not row:
+        raise ValidationError("Transaction not found")
+    return row
+
+
+def get_customer_transactions(actor: Actor, customer_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    return lakehouse.get_customer_transactions(CATALOG, customer_id, limit)
+
+
+def get_customer_risk_profile(actor: Actor, customer_id: str) -> dict[str, Any]:
+    row = lakehouse.get_customer_risk_profile(CATALOG, customer_id)
+    if not row:
+        raise ValidationError("Customer risk profile not found")
+    return row
+
+
+def get_exchange_rate(actor: Actor, from_currency: str, to_currency: str = "USD") -> dict[str, Any]:
+    row = lakehouse.get_exchange_rate(CATALOG, from_currency, to_currency)
+    if not row:
+        raise ValidationError("Exchange rate not found")
+    return row
+
+
+def get_investigation_notes(actor: Actor, alert_id: str) -> list[dict[str, Any]]:
+    return lakebase.fetch_all(
+        """
+        SELECT i.investigation_id::text, n.note_id::text, n.note_text,
+               n.author_id::text, n.created_at
+        FROM investigations i
+        JOIN investigation_notes n ON n.investigation_id = i.investigation_id
+        WHERE i.alert_id = %s::uuid
+        ORDER BY n.created_at DESC
+        """,
+        (alert_id,),
+    )
+
+
+# -----------------------------
+# Controlled write tools
+# -----------------------------
 def create_investigation(actor: Actor, alert_id: str, summary: str = "") -> dict[str, Any]:
     require_role(actor, "ANALYST")
     if len(summary) > 4000:
@@ -118,7 +163,6 @@ def create_investigation(actor: Actor, alert_id: str, summary: str = "") -> dict
 
 def assign_alert(actor: Actor, alert_id: str, analyst_id: str) -> dict[str, Any]:
     require_role(actor, "ANALYST")
-    # Analysts may only self-assign. Senior analysts/admins may assign others.
     if actor.role == "ANALYST" and analyst_id != actor.user_id:
         raise AuthorizationError("Analysts may only assign alerts to themselves")
 
@@ -266,6 +310,11 @@ def resolve_alert(actor: Actor, alert_id: str, resolution: str) -> dict[str, Any
 TOOL_REGISTRY: dict[str, Callable[..., Any]] = {
     "get_alert": get_alert,
     "list_open_alerts": list_open_alerts,
+    "get_transaction": get_transaction,
+    "get_customer_transactions": get_customer_transactions,
+    "get_customer_risk_profile": get_customer_risk_profile,
+    "get_exchange_rate": get_exchange_rate,
+    "get_investigation_notes": get_investigation_notes,
     "create_investigation": create_investigation,
     "assign_alert": assign_alert,
     "add_investigation_note": add_investigation_note,
