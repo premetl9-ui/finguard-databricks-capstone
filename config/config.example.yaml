@@ -1,0 +1,39 @@
+project:
+  catalog: finguard
+  bronze_schema: bronze
+  silver_schema: silver
+  gold_schema: gold
+  operations_schema: operations
+  cdc_schema: lakebase_cdc
+
+transactions:
+  source_format: csv
+  source_path: /Volumes/finguard/raw/paysim
+  checkpoint_path: /Volumes/finguard/operations/checkpoints/transaction_risk_v1
+  default_currency: USD
+  home_currency: USD
+  high_value_threshold: 10000
+
+fx:
+  provider: alpha_vantage
+  current_refresh_hours: 6
+  daily_refresh_hour_utc: 1
+  currency_pairs:
+    - [USD, EUR]
+    - [USD, GBP]
+    - [USD, JPY]
+  timeout_seconds: 15
+  max_retries: 3
+
+streaming:
+  trigger_seconds: 10
+  watermark_minutes: 30
+  risk_window_minutes: 10
+  p95_latency_target_seconds: 60
+
+risk:
+  alert_threshold: 60
+  critical_threshold: 80
+
+model:
+  endpoint: databricks-meta-llama-3-3-70b-instruct
