@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Secrets / environment
+.env
+.env.*
+!.env.example
+config/config.yaml
+*.pem
+*.key
+
+# Databricks local config
+.databricks/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / temp
+*.log
+*.tmp
+*.swp
+
+# Test/cache
+.pytest_cache/
+.coverage
+htmlcov/

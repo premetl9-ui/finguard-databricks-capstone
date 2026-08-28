@@ -1,0 +1,13 @@
+alpha_vantage:
+  api_key_secret_name: ALPHA_VANTAGE_API_KEY
+  currency_pairs:
+    - USD/EUR
+    - USD/GBP
+    - USD/JPY
+  current_rate_refresh_hours: 6
+  daily_fx_refresh_utc: "01:00"
+
+streaming:
+  enabled: false
+  micro_batch_seconds: 10
+  latency_target_seconds: 60
