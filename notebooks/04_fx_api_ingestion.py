@@ -1,7 +1,9 @@
 # Databricks notebook source
-# FinGuard - 04 Alpha Vantage FX ingestion
-# Schedule this notebook every 6 hours with mode=current.
-# Schedule a second task daily around 01:00 UTC with mode=daily.
+# MAGIC %md
+# MAGIC # FinGuard - 04 Alpha Vantage FX Ingestion
+# MAGIC Retrieve current and daily FX rates and upsert the Bronze and Silver FX tables.
+
+# COMMAND ----------
 
 import json
 import os
@@ -21,9 +23,19 @@ for candidate in [os.path.join(repo_root, "src"), os.path.join(os.getcwd(), "src
 
 from finguard.fx import AlphaVantageClient, AlphaVantageError  # noqa: E402
 
-CATALOG = spark.conf.get("finguard.catalog", "finguard")
-BRONZE = f"{CATALOG}.bronze.bronze_fx_api"
-SILVER = f"{CATALOG}.silver.silver_fx_rates"
+CATALOG = "bootcamp_students"
+USER_EMAIL = spark.sql("SELECT current_user() AS user_email").first()["user_email"]
+USERNAME = USER_EMAIL.split("@")[0].replace(".", "_").replace("-", "_")
+BRONZE = f"{CATALOG}.{USERNAME}_bronze.bronze_fx_api"
+SILVER = f"{CATALOG}.{USERNAME}_silver.silver_fx_rates"
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Runtime Parameters
+# MAGIC Configure the FX retrieval mode and requested currency pairs.
+
+# COMMAND ----------
 
 try:
     dbutils.widgets.text("mode", "current")
@@ -36,7 +48,14 @@ except Exception:
 
 pairs = [tuple(item.split(":")) for item in pair_text.split(",") if ":" in item]
 
-# Prefer a Databricks secret when configured; fall back to environment only for local/dev.
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## API Authentication
+# MAGIC Read the Alpha Vantage API key from Databricks Secrets or the development environment.
+
+# COMMAND ----------
+
 api_key = None
 try:
     scope = spark.conf.get("finguard.secret_scope", "")
@@ -48,6 +67,14 @@ except Exception:
 api_key = api_key or os.getenv("ALPHA_VANTAGE_API_KEY")
 if not api_key:
     raise RuntimeError("Configure ALPHA_VANTAGE_API_KEY or finguard.secret_scope before running FX ingestion")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Retrieve FX Rates
+# MAGIC Call Alpha Vantage and prepare Bronze API audit rows and normalized rate rows.
+
+# COMMAND ----------
 
 client = AlphaVantageClient(api_key=api_key, timeout_seconds=15, max_retries=3)
 
@@ -124,6 +151,14 @@ for from_currency, to_currency in pairs:
                 error_message=str(exc)[:2000],
             )
         )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Persist FX Results
+# MAGIC Append API audit records to Bronze and upsert normalized exchange rates into Silver.
+
+# COMMAND ----------
 
 if bronze_rows:
     spark.createDataFrame(bronze_rows).write.mode("append").format("delta").saveAsTable(BRONZE)
