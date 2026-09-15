@@ -1,12 +1,50 @@
 # Databricks notebook source
-# FinGuard - 01 Bronze ingestion
+# MAGIC %md
+# MAGIC # FinGuard - 01 Bronze Ingestion
+# MAGIC Load PaySim transaction data into the logged-in student's Bronze schema.
+
+# COMMAND ----------
 
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
-CATALOG = spark.conf.get("finguard.catalog", "finguard")
-SOURCE_PATH = spark.conf.get("finguard.paysim.path", "/Volumes/finguard/raw/paysim")
-TARGET = f"{CATALOG}.bronze.bronze_transactions"
+CATALOG = "bootcamp_students"
+USER_EMAIL = spark.sql("SELECT current_user() AS user_email").first()["user_email"]
+USERNAME = USER_EMAIL.split("@")[0].replace(".", "_").replace("-", "_")
+
+BRONZE_SCHEMA = f"{USERNAME}_bronze"
+BRONZE_SCHEMA_FQN = f"{CATALOG}.{BRONZE_SCHEMA}"
+RAW_VOLUME = f"{BRONZE_SCHEMA_FQN}.raw"
+
+SOURCE_PATH = spark.conf.get(
+    "finguard.paysim.path",
+    f"/Volumes/{CATALOG}/{BRONZE_SCHEMA}/raw/paysim",
+)
+TARGET = f"{BRONZE_SCHEMA_FQN}.bronze_transactions"
+
+print(f"Logged-in Databricks user: {USER_EMAIL}")
+print(f"Bronze schema: {BRONZE_SCHEMA_FQN}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Create Bronze Schema and Raw Volume
+# MAGIC Create the student-specific schema and raw volume before running ingestion.
+
+# COMMAND ----------
+
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {BRONZE_SCHEMA_FQN}")
+spark.sql(f"CREATE VOLUME IF NOT EXISTS {RAW_VOLUME}")
+
+print(f"Raw volume ready: {RAW_VOLUME}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Ingest PaySim Transactions
+# MAGIC Read the source CSV, add audit fields, remove existing transaction IDs, and append new rows.
+
+# COMMAND ----------
 
 schema = T.StructType(
     [
