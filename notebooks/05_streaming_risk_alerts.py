@@ -1,23 +1,35 @@
 # Databricks notebook source
-# FinGuard - 05 Optional Velocity path
-# Reads incremental Silver commits, scores them every 10 seconds, MERGEs Gold risk,
-# and performs idempotent Lakebase alert upserts.
+# MAGIC %md
+# MAGIC # FinGuard - 05 Streaming Risk Alerts
+# MAGIC Process incremental Silver transactions, update Gold risk scores, and write Lakebase alerts.
+
+# COMMAND ----------
 
 import os
 
 from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
-CATALOG = spark.conf.get("finguard.catalog", "finguard")
-SILVER = f"{CATALOG}.silver.silver_transactions"
-RISK = f"{CATALOG}.gold.gold_transaction_risk"
+CATALOG = "bootcamp_students"
+USER_EMAIL = spark.sql("SELECT current_user() AS user_email").first()["user_email"]
+USERNAME = USER_EMAIL.split("@")[0].replace(".", "_").replace("-", "_")
+SILVER = f"{CATALOG}.{USERNAME}_silver.silver_transactions"
+RISK = f"{CATALOG}.{USERNAME}_gold.gold_transaction_risk"
 CHECKPOINT = spark.conf.get(
     "finguard.risk_checkpoint",
-    f"/Volumes/{CATALOG}/operations/checkpoints/transaction_risk_v1",
+    f"/Volumes/{CATALOG}/{USERNAME}_operations/checkpoints/transaction_risk_v1",
 )
 ALERT_THRESHOLD = int(spark.conf.get("finguard.alert_threshold", "60"))
 TRIGGER_SECONDS = int(spark.conf.get("finguard.trigger_seconds", "10"))
 
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Risk-Scoring Function
+# MAGIC Apply deterministic fraud rules to each incremental Silver micro-batch.
+
+# COMMAND ----------
 
 def score_batch(df):
     amount_rule = F.col("amount_deviation") >= 3.0
@@ -73,6 +85,14 @@ def score_batch(df):
     )
 
 
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Lakebase Alert Writer
+# MAGIC Write alert candidates to PostgreSQL with idempotent transaction-based upserts.
+
+# COMMAND ----------
+
 def write_alert_partition(rows):
     """One PostgreSQL connection per Spark partition; transaction_id makes writes idempotent."""
     import psycopg
@@ -125,6 +145,14 @@ def write_alert_partition(rows):
         conn.close()
 
 
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Micro-Batch Processing
+# MAGIC Merge scored transactions into Gold and send qualifying alerts to Lakebase.
+
+# COMMAND ----------
+
 def process_microbatch(batch_df, batch_id: int):
     if batch_df.isEmpty():
         return
@@ -155,6 +183,14 @@ def process_microbatch(batch_df, batch_id: int):
     print(f"batch_id={batch_id}, scored={scored.count()}, alerts={alerts.count()}, p95_seconds={latency}")
     scored.unpersist()
 
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Start Streaming Query
+# MAGIC Run the Silver stream using the configured checkpoint and processing interval.
+
+# COMMAND ----------
 
 stream = spark.readStream.table(SILVER)
 
