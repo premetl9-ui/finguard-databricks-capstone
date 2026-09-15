@@ -1,14 +1,26 @@
 # Databricks notebook source
-# FinGuard - 06 Lakebase CDF -> Gold operational analytics
-# Configure this notebook as a Databricks Workflow task every 1 minute after
-# native Lakebase CDF has created the lb_*_history Delta tables.
+# MAGIC %md
+# MAGIC # FinGuard - 06 Lakebase CDC Analytics
+# MAGIC Refresh Gold operational analytics from native Lakebase change-data-feed history tables.
+
+# COMMAND ----------
 
 from pyspark.sql import functions as F
 
-CATALOG = spark.conf.get("finguard.catalog", "finguard")
-CDC = f"{CATALOG}.lakebase_cdc"
-GOLD = f"{CATALOG}.gold.gold_alert_summary"
+CATALOG = "bootcamp_students"
+USER_EMAIL = spark.sql("SELECT current_user() AS user_email").first()["user_email"]
+USERNAME = USER_EMAIL.split("@")[0].replace(".", "_").replace("-", "_")
+CDC = f"{CATALOG}.{USERNAME}_lakebase_cdc"
+GOLD = f"{CATALOG}.{USERNAME}_gold.gold_alert_summary"
 
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Read CDC Post-Images
+# MAGIC Keep inserted rows and the latest values produced by PostgreSQL updates.
+
+# COMMAND ----------
 
 def post_image(table_name: str):
     df = spark.table(f"{CDC}.{table_name}")
@@ -20,6 +32,14 @@ alerts = post_image("lb_fraud_alerts_history")
 status_history = post_image("lb_alert_status_history_history")
 investigations = post_image("lb_investigations_history")
 actions = post_image("lb_agent_actions_history")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Build Operational Metrics
+# MAGIC Calculate daily alert, status, investigation-resolution, and agent-action metrics.
+
+# COMMAND ----------
 
 alert_created = (
     alerts.filter(F.col("_pg_change_type") == "insert")
@@ -64,6 +84,14 @@ agent_metrics = (
         ),
     )
 )
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Refresh Gold Summary
+# MAGIC Combine each operational metric and overwrite the Gold summary table.
+
+# COMMAND ----------
 
 all_dates = (
     alert_created.select("metric_date")
