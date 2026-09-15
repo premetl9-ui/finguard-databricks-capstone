@@ -1,4 +1,20 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
+spark.range(1).show()
+
+# COMMAND ----------
+
+# MAGIC %pip install "psycopg[binary]"
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC # FinGuard - 05 Streaming Risk Alerts
 # MAGIC Process incremental Silver transactions, update Gold risk scores, and write Lakebase alerts.
@@ -11,17 +27,65 @@ from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
 CATALOG = "bootcamp_students"
-USER_EMAIL = spark.sql("SELECT current_user() AS user_email").first()["user_email"]
-USERNAME = USER_EMAIL.split("@")[0].replace(".", "_").replace("-", "_")
-SILVER = f"{CATALOG}.{USERNAME}_silver.silver_transactions"
-RISK = f"{CATALOG}.{USERNAME}_gold.gold_transaction_risk"
-CHECKPOINT = spark.conf.get(
-    "finguard.risk_checkpoint",
-    f"/Volumes/{CATALOG}/{USERNAME}_operations/checkpoints/transaction_risk_v1",
-)
-ALERT_THRESHOLD = int(spark.conf.get("finguard.alert_threshold", "60"))
-TRIGGER_SECONDS = int(spark.conf.get("finguard.trigger_seconds", "10"))
 
+USER_EMAIL = (
+    spark.sql("SELECT current_user() AS user_email")
+    .first()["user_email"]
+)
+
+USERNAME = (
+    USER_EMAIL.split("@")[0]
+    .replace(".", "_")
+    .replace("-", "_")
+)
+
+SILVER_SCHEMA = f"{USERNAME}_silver"
+GOLD_SCHEMA = f"{USERNAME}_gold"
+OPERATIONS_SCHEMA = f"{USERNAME}_operations"
+
+SILVER = (
+    f"{CATALOG}.{SILVER_SCHEMA}.silver_transactions"
+)
+
+RISK = (
+    f"{CATALOG}.{GOLD_SCHEMA}.gold_transaction_risk"
+)
+
+CHECKPOINT_VOLUME = (
+    f"{CATALOG}.{OPERATIONS_SCHEMA}.checkpoints"
+)
+
+CHECKPOINT = (
+    f"/Volumes/{CATALOG}/{OPERATIONS_SCHEMA}"
+    "/checkpoints/transaction_risk_v1"
+)
+
+# Match the corrected threshold used in notebook 03.
+ALERT_THRESHOLD = 50
+
+# Streaming micro-batch interval.
+TRIGGER_SECONDS = 10
+
+# Create the Operations schema and checkpoint volume.
+spark.sql(
+    f"CREATE SCHEMA IF NOT EXISTS "
+    f"{CATALOG}.{OPERATIONS_SCHEMA}"
+)
+
+spark.sql(
+    f"CREATE VOLUME IF NOT EXISTS "
+    f"{CHECKPOINT_VOLUME}"
+)
+
+# Create the checkpoint subfolder.
+dbutils.fs.mkdirs(CHECKPOINT)
+
+print(f"Logged-in user: {USER_EMAIL}")
+print(f"Silver source: {SILVER}")
+print(f"Gold risk target: {RISK}")
+print(f"Checkpoint: {CHECKPOINT}")
+print(f"Alert threshold: {ALERT_THRESHOLD}")
+print(f"Trigger interval: {TRIGGER_SECONDS} seconds")
 
 # COMMAND ----------
 
@@ -87,50 +151,124 @@ def score_batch(df):
 
 # COMMAND ----------
 
+# Temporary runtime value only.
+# Do not commit the real connection string to GitHub.
+DATABASE_URL = (
+    "postgresql://premetl9%40gmail.com@ep-falling-cherry-d1cu09hi.database.us-west-2.cloud.databricks.com/databricks_postgres"
+    "?sslmode=require"
+)
+
+if not DATABASE_URL.startswith(
+    ("postgresql://", "postgres://")
+):
+    raise RuntimeError(
+        "A valid PostgreSQL connection string is required."
+    )
+
+print("PostgreSQL connection string configured.")
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Lakebase Alert Writer
 # MAGIC Write alert candidates to PostgreSQL with idempotent transaction-based upserts.
 
 # COMMAND ----------
 
+import psycopg
+
+PGHOST = (
+    "ep-falling-cherry-d1cu09hi."
+    "database.us-west-2.cloud.databricks.com"
+)
+PGPORT = 5432
+PGDATABASE = "databricks_postgres"
+PGUSER = "premetl9@gmail.com"
+
+# Paste the generated OAuth database token here temporarily.
+PGPASSWORD =  NONE
+
+conn = psycopg.connect(
+    host=PGHOST,
+    port=PGPORT,
+    dbname=PGDATABASE,
+    user=PGUSER,
+    password=PGPASSWORD,
+    sslmode="require",
+    connect_timeout=30,
+)
+
+with conn.cursor() as cursor:
+    cursor.execute(
+        "SELECT current_database(), current_user"
+    )
+    print(cursor.fetchone())
+
+conn.close()
+
+# COMMAND ----------
+
 def write_alert_partition(rows):
-    """One PostgreSQL connection per Spark partition; transaction_id makes writes idempotent."""
+    """
+    Write one Spark partition to Lakebase/PostgreSQL.
+
+    transaction_id makes fraud-alert writes idempotent.
+    """
     import psycopg
 
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        conn = psycopg.connect(database_url)
-    else:
-        conn = psycopg.connect(
-            host=os.environ["PGHOST"],
-            port=os.getenv("PGPORT", "5432"),
-            dbname=os.environ["PGDATABASE"],
-            user=os.environ["PGUSER"],
-            password=os.getenv("PGPASSWORD"),
-        )
+    conn = psycopg.connect(
+    host=PGHOST,
+    port=PGPORT,
+    dbname=PGDATABASE,
+    user=PGUSER,
+    password=PGPASSWORD,
+    sslmode="require",
+    connect_timeout=30,
+    )
 
     customer_sql = """
-    INSERT INTO customers (customer_id)
-    VALUES (%s)
-    ON CONFLICT (customer_id) DO NOTHING
+        INSERT INTO premetl9.customers (
+            customer_id
+        )
+        VALUES (%s)
+        ON CONFLICT (customer_id)
+        DO NOTHING
     """
+
     alert_sql = """
-    INSERT INTO fraud_alerts (
-        transaction_id, customer_id, risk_score, risk_level, alert_reason, status
-    ) VALUES (%s, %s, %s, %s, %s, 'OPEN')
-    ON CONFLICT (transaction_id)
-    DO UPDATE SET
-        risk_score = EXCLUDED.risk_score,
-        risk_level = EXCLUDED.risk_level,
-        alert_reason = EXCLUDED.alert_reason,
-        updated_at = CURRENT_TIMESTAMP
+        INSERT INTO premetl9.fraud_alerts (
+            transaction_id,
+            customer_id,
+            risk_score,
+            risk_level,
+            alert_reason,
+            status
+        )
+        VALUES (
+            %s,
+            %s,
+            %s,
+            %s,
+            %s,
+            'OPEN'
+        )
+        ON CONFLICT (transaction_id)
+        DO UPDATE SET
+            risk_score = EXCLUDED.risk_score,
+            risk_level = EXCLUDED.risk_level,
+            alert_reason = EXCLUDED.alert_reason,
+            updated_at = CURRENT_TIMESTAMP
     """
 
     try:
-        with conn.cursor() as cur:
+        with conn.cursor() as cursor:
             for row in rows:
-                cur.execute(customer_sql, (row.customer_id,))
-                cur.execute(
+                cursor.execute(
+                    customer_sql,
+                    (row.customer_id,),
+                )
+
+                cursor.execute(
                     alert_sql,
                     (
                         row.transaction_id,
@@ -140,10 +278,15 @@ def write_alert_partition(rows):
                         "; ".join(row.risk_reasons or []),
                     ),
                 )
+
         conn.commit()
+
+    except Exception:
+        conn.rollback()
+        raise
+
     finally:
         conn.close()
-
 
 # COMMAND ----------
 
@@ -158,7 +301,7 @@ def process_microbatch(batch_df, batch_id: int):
         return
 
     batch_df = batch_df.filter(F.col("data_quality_status").isin("VALID", "STALE_FX_RATE"))
-    scored = score_batch(batch_df).persist()
+    scored = score_batch(batch_df)
 
     target = DeltaTable.forName(spark, RISK)
     (
@@ -181,7 +324,6 @@ def process_microbatch(batch_df, batch_id: int):
         )
     ).first()["p95_seconds"]
     print(f"batch_id={batch_id}, scored={scored.count()}, alerts={alerts.count()}, p95_seconds={latency}")
-    scored.unpersist()
 
 
 # COMMAND ----------
@@ -195,11 +337,82 @@ def process_microbatch(batch_df, batch_id: int):
 stream = spark.readStream.table(SILVER)
 
 query = (
-    stream.writeStream.foreachBatch(process_microbatch)
-    .option("checkpointLocation", CHECKPOINT)
-    .trigger(processingTime=f"{TRIGGER_SECONDS} seconds")
+    stream.writeStream
+    .foreachBatch(process_microbatch)
+    .option(
+        "checkpointLocation",
+        CHECKPOINT,
+    )
+    .trigger(availableNow=True)
     .queryName("finguard_transaction_risk")
     .start()
 )
 
 query.awaitTermination()
+
+print(
+    "Available Silver transactions were processed "
+    "and the streaming query completed."
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC **Validate Lakebase**
+
+# COMMAND ----------
+
+with psycopg.connect(
+    host=PGHOST,
+    port=PGPORT,
+    dbname=PGDATABASE,
+    user=PGUSER,
+    password=PGPASSWORD,
+    sslmode="require",
+    connect_timeout=30,
+) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM premetl9.fraud_alerts
+        """)
+        alert_count = cursor.fetchone()[0]
+
+        cursor.execute("""
+            SELECT COUNT(*)
+            FROM premetl9.customers
+        """)
+        customer_count = cursor.fetchone()[0]
+
+print(f"Lakebase fraud alerts: {alert_count:,}")
+print(f"Lakebase customers: {customer_count:,}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC **Alert distribution validation**
+
+# COMMAND ----------
+
+with psycopg.connect(
+    host=PGHOST,
+    port=PGPORT,
+    dbname=PGDATABASE,
+    user=PGUSER,
+    password=PGPASSWORD,
+    sslmode="require",
+    connect_timeout=30,
+) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT
+                risk_level,
+                status,
+                COUNT(*) AS alert_count
+            FROM premetl9.fraud_alerts
+            GROUP BY risk_level, status
+            ORDER BY alert_count DESC
+        """)
+
+        for record in cursor.fetchall():
+            print(record)

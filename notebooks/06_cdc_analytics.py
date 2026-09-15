@@ -1,18 +1,144 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC # FinGuard - 06 Lakebase CDC Analytics
 # MAGIC Refresh Gold operational analytics from native Lakebase change-data-feed history tables.
 
 # COMMAND ----------
 
+# MAGIC %pip install "psycopg[binary]"
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
 from pyspark.sql import functions as F
 
 CATALOG = "bootcamp_students"
-USER_EMAIL = spark.sql("SELECT current_user() AS user_email").first()["user_email"]
-USERNAME = USER_EMAIL.split("@")[0].replace(".", "_").replace("-", "_")
-CDC = f"{CATALOG}.{USERNAME}_lakebase_cdc"
-GOLD = f"{CATALOG}.{USERNAME}_gold.gold_alert_summary"
 
+USER_EMAIL = (
+    spark.sql("SELECT current_user() AS user_email")
+    .first()["user_email"]
+)
+
+USERNAME = (
+    USER_EMAIL.split("@")[0]
+    .replace(".", "_")
+    .replace("-", "_")
+)
+
+CDC_SCHEMA = f"{USERNAME}_lakebase_cdc"
+GOLD_SCHEMA = f"{USERNAME}_gold"
+
+CDC = f"{CATALOG}.{CDC_SCHEMA}"
+
+GOLD = (
+    f"{CATALOG}.{GOLD_SCHEMA}."
+    "gold_alert_summary"
+)
+
+spark.sql(
+    f"CREATE SCHEMA IF NOT EXISTS "
+    f"{CATALOG}.{CDC_SCHEMA}"
+)
+
+spark.sql(
+    f"CREATE SCHEMA IF NOT EXISTS "
+    f"{CATALOG}.{GOLD_SCHEMA}"
+)
+
+print(f"Logged-in user: {USER_EMAIL}")
+print(f"Lakebase CDC schema: {CDC}")
+print(f"Gold alert summary: {GOLD}")
+
+# COMMAND ----------
+
+display(
+    spark.sql(
+        f"SHOW TABLES IN {CDC}"
+    )
+)
+
+# COMMAND ----------
+
+expected_cdc_tables = [
+    "lb_fraud_alerts_history",
+    "lb_alert_status_history_history",
+    "lb_investigations_history",
+    "lb_agent_actions_history",
+]
+
+for table_name in expected_cdc_tables:
+    full_table_name = f"{CDC}.{table_name}"
+
+    print(
+        full_table_name,
+        spark.catalog.tableExists(full_table_name),
+    )
+
+# COMMAND ----------
+
+import psycopg
+
+PGHOST = (
+    "ep-falling-cherry-d1cu09hi."
+    "database.us-west-2.cloud.databricks.com"
+)
+PGPORT = 5432
+PGDATABASE = "databricks_postgres"
+PGUSER = "premetl9@gmail.com"
+
+# Paste the generated OAuth database token here temporarily.
+PGPASSWORD = none 
+
+conn = psycopg.connect(
+    host=PGHOST,
+    port=PGPORT,
+    dbname=PGDATABASE,
+    user=PGUSER,
+    password=PGPASSWORD,
+    sslmode="require",
+    connect_timeout=30,
+)
+
+with conn.cursor() as cursor:
+    cursor.execute(
+        "SELECT current_database(), current_user"
+    )
+    print(cursor.fetchone())
+
+conn.close()
+
+# COMMAND ----------
+
+import psycopg
+
+print(f"psycopg version: {psycopg.__version__}")
+
+with psycopg.connect(
+    host=PGHOST,
+    port=PGPORT,
+    dbname=PGDATABASE,
+    user=PGUSER,
+    password=PGPASSWORD,
+    sslmode="require",
+    connect_timeout=30,
+) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT table_name
+            FROM information_schema.tables
+            WHERE table_schema = 'premetl9'
+            ORDER BY table_name
+        """)
+
+        for row in cursor.fetchall():
+            print(row[0])
 
 # COMMAND ----------
 
@@ -32,6 +158,23 @@ alerts = post_image("lb_fraud_alerts_history")
 status_history = post_image("lb_alert_status_history_history")
 investigations = post_image("lb_investigations_history")
 actions = post_image("lb_agent_actions_history")
+
+# COMMAND ----------
+
+for dataframe_name, dataframe in [
+    ("alerts", alerts),
+    ("status_history", status_history),
+    ("investigations", investigations),
+    ("actions", actions),
+]:
+    print(f"\n{dataframe_name}")
+
+    (
+        dataframe.groupBy("_pg_change_type")
+        .count()
+        .orderBy("_pg_change_type")
+        .show()
+    )
 
 # COMMAND ----------
 
@@ -95,17 +238,43 @@ agent_metrics = (
 
 all_dates = (
     alert_created.select("metric_date")
-    .union(status_metrics.select("metric_date"))
-    .union(resolution_metrics.select("metric_date"))
-    .union(agent_metrics.select("metric_date"))
+    .union(
+        status_metrics.select("metric_date")
+    )
+    .union(
+        resolution_metrics.select("metric_date")
+    )
+    .union(
+        agent_metrics.select("metric_date")
+    )
+    .filter(
+        F.col("metric_date").isNotNull()
+    )
     .distinct()
 )
 
 summary = (
-    all_dates.join(alert_created, "metric_date", "left")
-    .join(status_metrics, "metric_date", "left")
-    .join(resolution_metrics, "metric_date", "left")
-    .join(agent_metrics, "metric_date", "left")
+    all_dates
+    .join(
+        alert_created,
+        on="metric_date",
+        how="left",
+    )
+    .join(
+        status_metrics,
+        on="metric_date",
+        how="left",
+    )
+    .join(
+        resolution_metrics,
+        on="metric_date",
+        how="left",
+    )
+    .join(
+        agent_metrics,
+        on="metric_date",
+        how="left",
+    )
     .fillna(
         {
             "alerts_created": 0,
@@ -116,10 +285,38 @@ summary = (
             "agent_action_success_rate": 0.0,
         }
     )
-    .withColumn("refreshed_at", F.current_timestamp())
+    .withColumn(
+        "refreshed_at",
+        F.current_timestamp(),
+    )
+    .dropDuplicates(["metric_date"])
 )
 
-summary.createOrReplaceTempView("finguard_alert_summary_refresh")
-spark.sql(f"INSERT OVERWRITE {GOLD} SELECT * FROM finguard_alert_summary_refresh")
+summary_count = summary.count()
 
-print(f"Operational analytics dates refreshed: {summary.count():,}")
+if summary_count > 0:
+    (
+        summary.write.format("delta")
+        .mode("overwrite")
+        .option("overwriteSchema", "true")
+        .saveAsTable(GOLD)
+    )
+
+    print(f"Gold summary refreshed: {GOLD}")
+else:
+    print(
+        "No CDC operational metrics were available "
+        "to write."
+    )
+
+print(
+    f"Operational analytics dates refreshed: "
+    f"{summary_count:,}"
+)
+
+# COMMAND ----------
+
+display(
+    spark.table(GOLD)
+    .orderBy("metric_date")
+)

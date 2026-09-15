@@ -1,4 +1,8 @@
 # Databricks notebook source
+# /// script
+# [tool.databricks.environment]
+# environment_version = "5"
+# ///
 # MAGIC %md
 # MAGIC # FinGuard - 02 Silver Transformations
 # MAGIC Clean Bronze transactions, enforce data-quality rules, enrich FX rates, and build behavioral features.
@@ -6,21 +10,72 @@
 # COMMAND ----------
 
 from delta.tables import DeltaTable
-from pyspark.sql import functions as F
 from pyspark.sql import Window
+from pyspark.sql import functions as F
 
 CATALOG = "bootcamp_students"
-USER_EMAIL = spark.sql("SELECT current_user() AS user_email").first()["user_email"]
-USERNAME = USER_EMAIL.split("@")[0].replace(".", "_").replace("-", "_")
-HOME_CURRENCY = spark.conf.get("finguard.home_currency", "USD").upper()
-HIGH_VALUE_THRESHOLD = float(spark.conf.get("finguard.high_value_threshold", "10000"))
 
-BRONZE = f"{CATALOG}.{USERNAME}_bronze.bronze_transactions"
-FX = f"{CATALOG}.{USERNAME}_silver.silver_fx_rates"
-SILVER = f"{CATALOG}.{USERNAME}_silver.silver_transactions"
-QUARANTINE = f"{CATALOG}.{USERNAME}_silver.silver_transaction_quarantine"
+USER_EMAIL = (
+    spark.sql("SELECT current_user() AS user_email")
+    .first()["user_email"]
+)
 
-bronze = spark.table(BRONZE).dropDuplicates(["transaction_id"])
+USERNAME = (
+    USER_EMAIL.split("@")[0]
+    .replace(".", "_")
+    .replace("-", "_")
+)
+
+HOME_CURRENCY = "USD"
+HIGH_VALUE_THRESHOLD = 10_000.0
+
+BRONZE_SCHEMA = f"{USERNAME}_bronze"
+SILVER_SCHEMA = f"{USERNAME}_silver"
+
+BRONZE = (
+    f"{CATALOG}.{BRONZE_SCHEMA}.bronze_transactions"
+)
+
+FX = (
+    f"{CATALOG}.{SILVER_SCHEMA}.silver_fx_rates"
+)
+
+SILVER = (
+    f"{CATALOG}.{SILVER_SCHEMA}.silver_transactions"
+)
+
+QUARANTINE = (
+    f"{CATALOG}.{SILVER_SCHEMA}.silver_transaction_quarantine"
+)
+
+# Ensure the student-specific Silver schema exists.
+spark.sql(
+    f"CREATE SCHEMA IF NOT EXISTS {CATALOG}.{SILVER_SCHEMA}"
+)
+
+print(f"Logged-in user: {USER_EMAIL}")
+print(f"Bronze source: {BRONZE}")
+print(f"Silver target: {SILVER}")
+print(f"FX table: {FX}")
+print(f"Quarantine table: {QUARANTINE}")
+
+bronze = (
+    spark.table(BRONZE)
+    .dropDuplicates(["transaction_id"])
+)
+
+print(f"Bronze source is accessible: {BRONZE}")
+print(spark.catalog.tableExists(FX))
+
+# COMMAND ----------
+
+spark.sql(f"""
+SELECT
+    COUNT(*) AS fx_row_count,
+    MIN(rate_date) AS earliest_rate_date,
+    MAX(rate_date) AS latest_rate_date
+FROM {FX}
+""").show()
 
 # COMMAND ----------
 
@@ -112,6 +167,24 @@ joined = (
 
 # Records with missing FX rates are not risk-scored until enrichment succeeds.
 scorable = joined.filter(F.col("exchange_rate").isNotNull())
+
+# COMMAND ----------
+
+display(
+    scorable.select(
+        "source_currency",
+        "home_currency",
+        "exchange_rate",
+        "data_quality_status",
+    )
+    .groupBy(
+        "source_currency",
+        "home_currency",
+        "exchange_rate",
+        "data_quality_status",
+    )
+    .count()
+)
 
 # COMMAND ----------
 
@@ -214,3 +287,21 @@ target = DeltaTable.forName(spark, SILVER)
 
 print(f"Silver valid/scorable rows processed: {features.count():,}")
 print(f"Quarantined rows this run: {invalid.count():,}")
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT
+# MAGIC     COUNT(*) AS total_rows,
+# MAGIC     COUNT(DISTINCT transaction_id) AS unique_transactions
+# MAGIC FROM bootcamp_students.premetl9_silver.silver_transactions;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT
+# MAGIC     dq_error,
+# MAGIC     COUNT(*) AS error_count
+# MAGIC FROM bootcamp_students.premetl9_silver.silver_transaction_quarantine
+# MAGIC GROUP BY dq_error
+# MAGIC ORDER BY error_count DESC;
