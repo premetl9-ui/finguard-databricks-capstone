@@ -1,16 +1,22 @@
 # Databricks notebook source
-# FinGuard - 03 Gold risk scoring and analytics
+# MAGIC %md
+# MAGIC # FinGuard - 03 Gold Risk Scoring
+# MAGIC Calculate transaction risk scores and refresh customer and daily Gold analytics.
+
+# COMMAND ----------
 
 from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
-CATALOG = spark.conf.get("finguard.catalog", "finguard")
+CATALOG = "bootcamp_students"
+USER_EMAIL = spark.sql("SELECT current_user() AS user_email").first()["user_email"]
+USERNAME = USER_EMAIL.split("@")[0].replace(".", "_").replace("-", "_")
 ALERT_THRESHOLD = int(spark.conf.get("finguard.alert_threshold", "60"))
 
-SILVER = f"{CATALOG}.silver.silver_transactions"
-RISK = f"{CATALOG}.gold.gold_transaction_risk"
-CUSTOMER_RISK = f"{CATALOG}.gold.gold_customer_risk"
-DAILY = f"{CATALOG}.gold.gold_daily_transaction_metrics"
+SILVER = f"{CATALOG}.{USERNAME}_silver.silver_transactions"
+RISK = f"{CATALOG}.{USERNAME}_gold.gold_transaction_risk"
+CUSTOMER_RISK = f"{CATALOG}.{USERNAME}_gold.gold_customer_risk"
+DAILY = f"{CATALOG}.{USERNAME}_gold.gold_daily_transaction_metrics"
 
 silver = spark.table(SILVER).filter(F.col("data_quality_status").isin("VALID", "STALE_FX_RATE"))
 
@@ -75,7 +81,14 @@ risk_target = DeltaTable.forName(spark, RISK)
     .execute()
 )
 
-# Customer risk snapshot.
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Customer Risk Snapshot
+# MAGIC Aggregate transaction risk into the latest customer-level risk view.
+
+# COMMAND ----------
+
 customer = (
     spark.table(RISK)
     .groupBy("customer_id")
@@ -98,7 +111,14 @@ customer = (
 customer.createOrReplaceTempView("customer_risk_refresh")
 spark.sql(f"INSERT OVERWRITE {CUSTOMER_RISK} SELECT * FROM customer_risk_refresh")
 
-# Daily metrics snapshot.
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Daily Transaction Metrics
+# MAGIC Refresh daily transaction counts, amounts, and high-risk totals.
+
+# COMMAND ----------
+
 daily = (
     spark.table(RISK)
     .groupBy("event_date")
