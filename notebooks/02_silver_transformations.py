@@ -1,24 +1,35 @@
 # Databricks notebook source
-# FinGuard - 02 Silver cleaning, quality contracts, FX enrichment, and features
+# MAGIC %md
+# MAGIC # FinGuard - 02 Silver Transformations
+# MAGIC Clean Bronze transactions, enforce data-quality rules, enrich FX rates, and build behavioral features.
+
+# COMMAND ----------
 
 from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 from pyspark.sql import Window
 
-CATALOG = spark.conf.get("finguard.catalog", "finguard")
+CATALOG = "bootcamp_students"
+USER_EMAIL = spark.sql("SELECT current_user() AS user_email").first()["user_email"]
+USERNAME = USER_EMAIL.split("@")[0].replace(".", "_").replace("-", "_")
 HOME_CURRENCY = spark.conf.get("finguard.home_currency", "USD").upper()
 HIGH_VALUE_THRESHOLD = float(spark.conf.get("finguard.high_value_threshold", "10000"))
 
-BRONZE = f"{CATALOG}.bronze.bronze_transactions"
-FX = f"{CATALOG}.silver.silver_fx_rates"
-SILVER = f"{CATALOG}.silver.silver_transactions"
-QUARANTINE = f"{CATALOG}.silver.silver_transaction_quarantine"
+BRONZE = f"{CATALOG}.{USERNAME}_bronze.bronze_transactions"
+FX = f"{CATALOG}.{USERNAME}_silver.silver_fx_rates"
+SILVER = f"{CATALOG}.{USERNAME}_silver.silver_transactions"
+QUARANTINE = f"{CATALOG}.{USERNAME}_silver.silver_transaction_quarantine"
 
 bronze = spark.table(BRONZE).dropDuplicates(["transaction_id"])
 
-# -----------------------------
-# Silver data-quality contract
-# -----------------------------
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Silver Data-Quality Contract
+# MAGIC Validate required transaction fields and quarantine records that fail the contract.
+
+# COMMAND ----------
+
 quality = (
     bronze.withColumn("source_currency", F.upper(F.trim("source_currency")))
     .withColumn("transaction_type", F.upper(F.trim("transaction_type")))
@@ -52,9 +63,14 @@ if invalid.limit(1).count() > 0:
         .saveAsTable(QUARANTINE)
     )
 
-# -----------------------------
-# FX enrichment
-# -----------------------------
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## FX Enrichment
+# MAGIC Join valid transactions to daily exchange rates and calculate home-currency amounts.
+
+# COMMAND ----------
+
 fx = (
     spark.table(FX)
     .filter(F.col("to_currency") == HOME_CURRENCY)
@@ -97,9 +113,14 @@ joined = (
 # Records with missing FX rates are not risk-scored until enrichment succeeds.
 scorable = joined.filter(F.col("exchange_rate").isNotNull())
 
-# -----------------------------
-# Customer behavior features
-# -----------------------------
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## Customer Behavior Features
+# MAGIC Build historical amount, velocity, destination, and transaction-type features.
+
+# COMMAND ----------
+
 customer_time_window = (
     Window.partitionBy("customer_id")
     .orderBy(F.col("event_timestamp").cast("long"))
