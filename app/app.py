@@ -54,6 +54,61 @@ except Exception as exc:
     st.error(f"FinGuard authorization failed for {email}: {exc}")
     st.stop()
 
+
+# ------------------------------------------------------------
+# FinGuard Login / Welcome Screen
+# ------------------------------------------------------------
+if "finguard_logged_in" not in st.session_state:
+    st.session_state.finguard_logged_in = False
+
+if not st.session_state.finguard_logged_in:
+    st.markdown(
+        """
+        <div style="
+            max-width: 520px;
+            margin: 80px auto 20px auto;
+            padding: 40px;
+            border-radius: 16px;
+            border: 1px solid #e5e7eb;
+            text-align: center;
+        ">
+            <h1>🛡️ FinGuard</h1>
+            <p style="color: gray;">
+                Real-Time Financial Transaction Intelligence
+                & AI Investigation Platform
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        <div style="text-align:center;">
+            <p><b>Signed in as</b></p>
+            <p>{actor.email}</p>
+
+            <p><b>Role</b></p>
+            <p>{actor.role}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    _, center, _ = st.columns([1, 1, 1])
+
+    with center:
+        if st.button(
+            "Enter FinGuard",
+            use_container_width=True,
+            type="primary",
+        ):
+            st.session_state.finguard_logged_in = True
+            st.rerun()
+
+    st.stop()
+
+
 st.title("FinGuard")
 st.caption("Real-Time Financial Transaction Intelligence & AI Investigation Platform")
 st.sidebar.write(f"**User:** {actor.email}")
@@ -63,6 +118,12 @@ if "selected_alert" not in st.session_state:
     st.session_state.selected_alert = None
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
+
+if st.sidebar.button("Exit FinGuard", use_container_width=True):
+    st.session_state.finguard_logged_in = False
+    st.session_state.selected_alert = None
+    st.session_state.chat_messages = []
+    st.rerun()
 
 page = st.sidebar.radio("Navigation", ["Dashboard", "Alerts & Investigations", "AI Investigator"])
 
