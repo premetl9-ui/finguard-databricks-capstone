@@ -252,3 +252,10 @@ print(f"Alert candidates: {scored.filter('is_alert_candidate').count():,}")
 # MAGIC     MAX(event_date) AS latest_date,
 # MAGIC     SUM(transaction_count) AS total_transactions
 # MAGIC FROM bootcamp_students.premetl9_gold.gold_daily_transaction_metrics;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT risk_level, COUNT(*)
+# MAGIC FROM bootcamp_students.premetl9_gold.gold_transaction_risk
+# MAGIC GROUP BY risk_level;

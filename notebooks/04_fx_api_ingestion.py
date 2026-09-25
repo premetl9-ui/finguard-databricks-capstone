@@ -498,3 +498,11 @@ print(f"FX rates processed: {rates_upserted:,}")
 # MAGIC FROM bootcamp_students.premetl9_bronze.bronze_fx_api
 # MAGIC ORDER BY requested_at DESC
 # MAGIC LIMIT 10;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC
+# MAGIC SELECT *
+# MAGIC FROM bootcamp_students.premetl9_bronze.bronze_fx_api
+# MAGIC ORDER BY ingestion_timestamp DESC;

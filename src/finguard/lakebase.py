@@ -7,38 +7,72 @@ from typing import Any, Iterator
 
 import psycopg
 from psycopg.rows import dict_row
+from databricks.sdk import WorkspaceClient
+
+
+w = WorkspaceClient()
 
 
 def _connection_kwargs() -> dict[str, Any]:
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        return {"conninfo": database_url}
+    endpoint_name = os.getenv("ENDPOINT_NAME")
 
     required = {
         "host": os.getenv("PGHOST"),
         "port": os.getenv("PGPORT", "5432"),
         "dbname": os.getenv("PGDATABASE"),
         "user": os.getenv("PGUSER"),
-        "password": os.getenv("PGPASSWORD"),
     }
-    missing = [name for name, value in required.items() if not value and name != "password"]
+
+    missing = [name for name, value in required.items() if not value]
+
+    if not endpoint_name:
+        missing.append("ENDPOINT_NAME")
+
     if missing:
-        raise RuntimeError(f"Missing Lakebase connection settings: {', '.join(missing)}")
-    return required
+        raise RuntimeError(
+            f"Missing Lakebase connection settings: {', '.join(missing)}"
+        )
+    endpoint_name = os.environ["ENDPOINT_NAME"]
+
+    credential = w.postgres.generate_database_credential(
+        endpoint=endpoint_name
+    )
+
+    return {
+        **required,
+        "password": credential.token,
+        "sslmode": os.getenv("PGSSLMODE", "require"),
+    }
 
 
 @contextmanager
 def connect() -> Iterator[psycopg.Connection]:
     kwargs = _connection_kwargs()
+
     if "conninfo" in kwargs:
-        conn = psycopg.connect(kwargs["conninfo"], row_factory=dict_row)
+        conn = psycopg.connect(
+            kwargs["conninfo"],
+            row_factory=dict_row
+        )
     else:
-        conn = psycopg.connect(**kwargs, row_factory=dict_row)
+        conn = psycopg.connect(
+            **kwargs,
+            row_factory=dict_row
+        )
+
+    schema = os.getenv("FINGUARD_DB_SCHEMA", "premetl9")
+
     try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('search_path', %s, false)",
+                (f"{schema},public",),
+            )
+
         yield conn
+
     finally:
         conn.close()
-
 
 def fetch_one(sql: str, params: tuple[Any, ...] = ()) -> dict[str, Any] | None:
     with connect() as conn, conn.cursor() as cur:

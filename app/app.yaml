@@ -1,7 +1,14 @@
 command:
   - streamlit
   - run
-  - app.py
+  - app/app.py
   - --server.address=0.0.0.0
   - --server.port=8000
   - --server.headless=true
+
+env:
+  - name: ENDPOINT_NAME
+    valueFrom: postgres
+
+  - name: FINGUARD_DB_SCHEMA
+    value: premetl9
