@@ -83,15 +83,14 @@ if not st.session_state.finguard_logged_in:
     )
 
     st.markdown(
-        f"""
-        <div style="text-align:center;">
-            <p><b>Signed in as</b></p>
-            <p>{actor.email}</p>
-
-            <p><b>Role</b></p>
-            <p>{actor.role}</p>
-        </div>
-        """,
+        (
+            '<div style="text-align:center; margin-top:20px;">'
+            '<p style="margin-bottom:4px;"><strong>Signed in as</strong></p>'
+            f'<p style="margin-top:0; margin-bottom:18px;">{actor.email}</p>'
+            '<p style="margin-bottom:4px;"><strong>Role</strong></p>'
+            f'<p style="margin-top:0;">{actor.role}</p>'
+            '</div>'
+        ),
         unsafe_allow_html=True,
     )
 
