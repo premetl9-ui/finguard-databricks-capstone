@@ -66,7 +66,7 @@ if not st.session_state.finguard_logged_in:
         """
         <div style="
             max-width: 520px;
-            margin: 80px auto 20px auto;
+            margin: 80px auto 28px auto;
             padding: 40px;
             border-radius: 16px;
             border: 1px solid #e5e7eb;
@@ -82,28 +82,33 @@ if not st.session_state.finguard_logged_in:
         unsafe_allow_html=True,
     )
 
-    st.markdown(
-        (
-            '<div style="text-align:center; margin-top:20px;">'
-            '<p style="margin-bottom:4px;"><strong>Signed in as</strong></p>'
-            f'<p style="margin-top:0; margin-bottom:18px;">{actor.email}</p>'
-            '<p style="margin-bottom:4px;"><strong>Role</strong></p>'
-            f'<p style="margin-top:0;">{actor.role}</p>'
-            '</div>'
-        ),
-        unsafe_allow_html=True,
-    )
-
-    _, center, _ = st.columns([1, 1, 1])
+    _, center, _ = st.columns([1, 1.3, 1])
 
     with center:
+        login_username = st.text_input(
+            "Username",
+            placeholder="Enter your username",
+            key="finguard_login_username",
+        )
+
         if st.button(
-            "Enter FinGuard",
+            "Login",
             use_container_width=True,
             type="primary",
         ):
-            st.session_state.finguard_logged_in = True
-            st.rerun()
+            entered_username = login_username.strip().lower()
+            authenticated_usernames = {
+                actor.email.lower(),
+                actor.email.split("@")[0].lower(),
+            }
+
+            if entered_username in authenticated_usernames:
+                st.session_state.finguard_logged_in = True
+                st.rerun()
+            else:
+                st.error(
+                    "Username does not match your authenticated Databricks account."
+                )
 
     st.stop()
 
