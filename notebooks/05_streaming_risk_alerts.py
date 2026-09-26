@@ -3,7 +3,7 @@
 # [tool.databricks.environment]
 # environment_version = "5"
 # ///
-# MAGIC %pip install "psycopg[binary]"
+# MAGIC %pip install "psycopg[binary]" "databricks-sdk>=0.81"
 
 # COMMAND ----------
 
