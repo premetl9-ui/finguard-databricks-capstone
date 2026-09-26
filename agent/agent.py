@@ -88,10 +88,13 @@ TOOL_SCHEMAS = [
         ["alert_id"],
     ),
     _schema(
-        "assign_alert",
-        "Assign an alert to an analyst. Analysts can only self-assign.",
-        {"alert_id": {"type": "string"}, "analyst_id": {"type": "string"}},
-        ["alert_id", "analyst_id"],
+    "assign_alert",
+    "Assign an alert. If analyst_id is omitted, assign it to the currently authenticated FinGuard user.",
+    {
+        "alert_id": {"type": "string"},
+        "analyst_id": {"type": "string"},
+    },
+    ["alert_id"],
     ),
     _schema(
         "add_investigation_note",

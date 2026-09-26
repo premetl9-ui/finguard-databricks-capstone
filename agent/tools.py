@@ -161,36 +161,86 @@ def create_investigation(actor: Actor, alert_id: str, summary: str = "") -> dict
     return result
 
 
-def assign_alert(actor: Actor, alert_id: str, analyst_id: str) -> dict[str, Any]:
+def assign_alert(
+    actor: Actor,
+    alert_id: str,
+    analyst_id: str | None = None,
+) -> dict[str, Any]:
+
+    if not analyst_id:
+        analyst_id = actor.user_id
+
     require_role(actor, "ANALYST")
+
     if actor.role == "ANALYST" and analyst_id != actor.user_id:
-        raise AuthorizationError("Analysts may only assign alerts to themselves")
+        raise AuthorizationError(
+            "Analysts may only assign alerts to themselves"
+        )
 
     with lakebase.connect() as conn, conn.cursor() as cur:
-        cur.execute("SELECT status FROM fraud_alerts WHERE alert_id = %s::uuid FOR UPDATE", (alert_id,))
+        cur.execute(
+            """
+            SELECT status
+            FROM fraud_alerts
+            WHERE alert_id = %s::uuid
+            FOR UPDATE
+            """,
+            (alert_id,),
+        )
+
         current = cur.fetchone()
+
         if not current:
             raise ValidationError("Alert not found")
+
         if current["status"] in {"RESOLVED", "CLOSED"}:
-            raise ValidationError("Closed alerts cannot be reassigned")
+            raise ValidationError(
+                "Closed alerts cannot be reassigned"
+            )
 
         cur.execute(
             """
             UPDATE fraud_alerts
-            SET assigned_to = %s::uuid, status = 'ASSIGNED', updated_at = CURRENT_TIMESTAMP
+            SET assigned_to = %s::uuid,
+                status = 'ASSIGNED',
+                updated_at = CURRENT_TIMESTAMP
             WHERE alert_id = %s::uuid
-            RETURNING alert_id::text, assigned_to::text, status
+            RETURNING
+                alert_id::text,
+                assigned_to::text,
+                status
             """,
             (analyst_id, alert_id),
         )
+
         result = cur.fetchone()
+
         cur.execute(
             """
-            INSERT INTO alert_status_history (alert_id, old_status, new_status, changed_by, change_source, reason)
-            VALUES (%s::uuid, %s, 'ASSIGNED', %s::uuid, 'AGENT', 'Alert assignment')
+            INSERT INTO alert_status_history (
+                alert_id,
+                old_status,
+                new_status,
+                changed_by,
+                change_source,
+                reason
+            )
+            VALUES (
+                %s::uuid,
+                %s,
+                'ASSIGNED',
+                %s::uuid,
+                'AGENT',
+                'Alert assignment'
+            )
             """,
-            (alert_id, current["status"], actor.user_id),
+            (
+                alert_id,
+                current["status"],
+                actor.user_id,
+            ),
         )
+
         conn.commit()
 
     lakebase.record_agent_action(
@@ -199,9 +249,12 @@ def assign_alert(actor: Actor, alert_id: str, analyst_id: str) -> dict[str, Any]
         "WRITE",
         "SUCCESS",
         alert_id=alert_id,
-        request_payload={"analyst_id": analyst_id},
+        request_payload={
+            "analyst_id": analyst_id
+        },
         result_payload=result,
     )
+
     return result
 
 
