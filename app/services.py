@@ -21,18 +21,88 @@ def current_actor(email: str) -> Actor:
     return get_user_by_email(email)
 
 
-def alert_queue(limit: int = 200) -> pd.DataFrame:
+def alert_queue(
+    limit: int = 200,
+    risk_level: str | None = None,
+    status: str | None = None,
+    search: str | None = None,
+) -> pd.DataFrame:
+    limit = max(1, min(int(limit), 500))
+
+    conditions: list[str] = []
+    params: list[Any] = []
+
+    if risk_level and risk_level != "ALL":
+        conditions.append("risk_level = %s")
+        params.append(risk_level)
+
+    if status and status != "ALL":
+        conditions.append("status = %s")
+        params.append(status)
+
+    if search and search.strip():
+        pattern = f"%{search.strip()}%"
+        conditions.append(
+            """
+            (
+                transaction_id ILIKE %s
+                OR customer_id ILIKE %s
+                OR alert_id::text ILIKE %s
+            )
+            """
+        )
+        params.extend([pattern, pattern, pattern])
+
+    where_clause = (
+        "WHERE " + " AND ".join(conditions)
+        if conditions
+        else ""
+    )
+
     rows = lakebase.fetch_all(
-        """
+        f"""
         SELECT alert_id::text, transaction_id, customer_id, risk_score, risk_level,
                status, assigned_to::text, created_at, updated_at
         FROM fraud_alerts
+        {where_clause}
         ORDER BY
           CASE risk_level WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 ELSE 4 END,
+          risk_score DESC,
           created_at DESC
         LIMIT %s
         """,
-        (limit,),
+        tuple(params + [limit]),
+    )
+
+    return pd.DataFrame(rows)
+
+
+def alert_status_distribution() -> pd.DataFrame:
+    rows = lakebase.fetch_all(
+        """
+        SELECT status, COUNT(*) AS alert_count
+        FROM fraud_alerts
+        GROUP BY status
+        ORDER BY alert_count DESC, status
+        """
+    )
+    return pd.DataFrame(rows)
+
+
+def alert_risk_distribution() -> pd.DataFrame:
+    rows = lakebase.fetch_all(
+        """
+        SELECT risk_level, COUNT(*) AS alert_count
+        FROM fraud_alerts
+        GROUP BY risk_level
+        ORDER BY
+          CASE risk_level
+            WHEN 'CRITICAL' THEN 1
+            WHEN 'HIGH' THEN 2
+            WHEN 'MEDIUM' THEN 3
+            ELSE 4
+          END
+        """
     )
     return pd.DataFrame(rows)
 
