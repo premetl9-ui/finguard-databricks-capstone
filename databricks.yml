@@ -1,0 +1,105 @@
+bundle:
+  name: finguard-databricks-capstone
+
+variables:
+  lakebase_host:
+    description: Lakebase PostgreSQL endpoint hostname used by notebook 05.
+    default: ep-falling-cherry-d1cu09hi.database.us-west-2.cloud.databricks.com
+
+  lakebase_endpoint:
+    description: Full Lakebase endpoint resource name, for example projects/<project-id>/branches/<branch-id>/endpoints/<endpoint-id>.
+    default: ""
+
+  lakebase_database:
+    description: Lakebase PostgreSQL database.
+    default: databricks_postgres
+
+  lakebase_port:
+    description: Lakebase PostgreSQL port.
+    default: "5432"
+
+resources:
+  jobs:
+    finguard_main_pipeline:
+      name: FinGuard - Main Transaction Pipeline
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      schedule:
+        quartz_cron_expression: "0 15 2 * * ?"
+        timezone_id: UTC
+        pause_status: PAUSED
+      tasks:
+        - task_key: bronze_ingestion
+          notebook_task:
+            notebook_path: ./notebooks/01_bronze_ingestion.py
+
+        - task_key: fx_refresh
+          notebook_task:
+            notebook_path: ./notebooks/04_fx_api_ingestion.py
+            base_parameters:
+              mode: current
+              pairs: USD:EUR,USD:GBP,USD:JPY
+
+        - task_key: silver_transformations
+          depends_on:
+            - task_key: bronze_ingestion
+            - task_key: fx_refresh
+          notebook_task:
+            notebook_path: ./notebooks/02_silver_transformations.py
+
+        - task_key: gold_risk_scoring
+          depends_on:
+            - task_key: silver_transformations
+          notebook_task:
+            notebook_path: ./notebooks/03_gold_risk_scoring.py
+
+        - task_key: streaming_risk_alerts
+          depends_on:
+            - task_key: gold_risk_scoring
+          notebook_task:
+            notebook_path: ./notebooks/05_streaming_risk_alerts.py
+            base_parameters:
+              lakebase_host: ${var.lakebase_host}
+              lakebase_endpoint: ${var.lakebase_endpoint}
+              lakebase_database: ${var.lakebase_database}
+              lakebase_port: ${var.lakebase_port}
+
+        - task_key: pipeline_validation
+          depends_on:
+            - task_key: streaming_risk_alerts
+          notebook_task:
+            notebook_path: ./notebooks/07_pipeline_validation.py
+
+    finguard_fx_refresh:
+      name: FinGuard - FX Refresh
+      max_concurrent_runs: 1
+      schedule:
+        quartz_cron_expression: "0 0 */6 * * ?"
+        timezone_id: UTC
+        pause_status: PAUSED
+      tasks:
+        - task_key: refresh_current_fx
+          notebook_task:
+            notebook_path: ./notebooks/04_fx_api_ingestion.py
+            base_parameters:
+              mode: current
+              pairs: USD:EUR,USD:GBP,USD:JPY
+
+    finguard_cdc_analytics:
+      name: FinGuard - CDC Analytics Refresh
+      max_concurrent_runs: 1
+      schedule:
+        quartz_cron_expression: "0 0/5 * * * ?"
+        timezone_id: UTC
+        pause_status: PAUSED
+      tasks:
+        - task_key: refresh_cdc_analytics
+          notebook_task:
+            notebook_path: ./notebooks/06_cdc_analytics.py
+
+targets:
+  dev:
+    default: true
+    workspace:
+      host: https://dbc-7b106152-caf3.cloud.databricks.com
