@@ -474,35 +474,72 @@ print(f"FX rates processed: {rates_upserted:,}")
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC SELECT
-# MAGIC     from_currency,
-# MAGIC     to_currency,
-# MAGIC     exchange_rate,
-# MAGIC     rate_date,
-# MAGIC     provider,
-# MAGIC     is_stale
-# MAGIC FROM bootcamp_students.premetl9_silver.silver_fx_rates
-# MAGIC ORDER BY from_currency, to_currency;
+# MAGIC %md
+# MAGIC ## Validate Silver FX Rates
+# MAGIC Display normalized FX rates from the dynamically resolved Silver table.
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC SELECT
-# MAGIC     function_name,
-# MAGIC     from_currency,
-# MAGIC     to_currency,
-# MAGIC     ingestion_status,
-# MAGIC     requested_at,
-# MAGIC     error_message
-# MAGIC FROM bootcamp_students.premetl9_bronze.bronze_fx_api
-# MAGIC ORDER BY requested_at DESC
-# MAGIC LIMIT 10;
+display(
+    spark.table(SILVER)
+    .select(
+        "from_currency",
+        "to_currency",
+        "exchange_rate",
+        "rate_date",
+        "provider",
+        "is_stale",
+        "refreshed_at",
+    )
+    .orderBy(
+        "from_currency",
+        "to_currency",
+        F.desc("rate_date"),
+    )
+)
 
 # COMMAND ----------
 
-# MAGIC %sql
-# MAGIC
-# MAGIC SELECT *
-# MAGIC FROM bootcamp_students.premetl9_bronze.bronze_fx_api
-# MAGIC ORDER BY ingestion_timestamp DESC;
+# MAGIC %md
+# MAGIC ## Validate Bronze FX API Audit
+# MAGIC Review the latest Alpha Vantage request status records using `requested_at`.
+
+# COMMAND ----------
+
+display(
+    spark.table(BRONZE)
+    .select(
+        "function_name",
+        "from_currency",
+        "to_currency",
+        "ingestion_status",
+        "requested_at",
+        "http_status",
+        "error_message",
+    )
+    .orderBy(F.desc("requested_at"))
+    .limit(20)
+)
+
+# COMMAND ----------
+
+fx_success_summary = (
+    spark.table(BRONZE)
+    .groupBy(
+        "function_name",
+        "from_currency",
+        "to_currency",
+        "ingestion_status",
+    )
+    .agg(
+        F.count("*").alias("request_count"),
+        F.max("requested_at").alias("latest_requested_at"),
+    )
+    .orderBy(
+        "from_currency",
+        "to_currency",
+        "ingestion_status",
+    )
+)
+
+display(fx_success_summary)
