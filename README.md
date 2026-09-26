@@ -227,6 +227,45 @@ Do not commit credentials. The project expects secrets and short-lived credentia
 
 The Alpha Vantage API key is stored outside source control. The Databricks App does not require a personal access token for AI model calls.
 
+
+## Automation
+
+FinGuard includes a Declarative Automation Bundle in `databricks.yml` and an automated validation notebook in `notebooks/07_pipeline_validation.py`.
+
+The bundle defines three Lakeflow Jobs:
+
+- **FinGuard - Main Transaction Pipeline**: Bronze ingestion and FX refresh run first, Silver waits for both, then Gold scoring, Lakebase alert writing, and automated validation run in sequence.
+- **FinGuard - FX Refresh**: refreshes USD/EUR, USD/GBP, and USD/JPY every six hours.
+- **FinGuard - CDC Analytics Refresh**: refreshes Lakebase CDC operational analytics every five minutes.
+
+The schedules are intentionally committed as `PAUSED` so cloning or deploying the repository does not immediately create recurring compute usage. After configuring `lakebase_endpoint`, validate and deploy the bundle, test each job once, and then unpause the schedules in the Databricks Jobs UI or change `pause_status` to `UNPAUSED`.
+
+The main pipeline requires the full Lakebase endpoint resource name in this format:
+
+```text
+projects/<project-id>/branches/<branch-id>/endpoints/<endpoint-id>
+```
+
+Set that value for the `lakebase_endpoint` bundle variable before running the main pipeline.
+
+Typical bundle commands are:
+
+```bash
+databricks bundle validate
+databricks bundle deploy
+databricks bundle run finguard_main_pipeline
+databricks bundle run finguard_fx_refresh
+databricks bundle run finguard_cdc_analytics
+```
+
+The validation notebook writes an audit history to:
+
+```text
+bootcamp_students.<username>_operations.pipeline_validation_results
+```
+
+It checks table availability, Bronze/Silver/quarantine reconciliation, transaction-ID uniqueness, Gold row reconciliation, risk-band mapping, alert-threshold mapping, required FX pairs, CDC history tables, Gold operational summary rows, and the agent-action success-rate range. Any failed required check raises an exception so the Lakeflow Job fails visibly.
+
 ## Documentation
 
 - [Architecture details](docs/architecture.md)
