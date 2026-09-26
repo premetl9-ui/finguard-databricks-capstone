@@ -16,6 +16,8 @@ from agent import chat as agent_chat  # noqa: E402
 from services import (  # noqa: E402
     alert_detail,
     alert_queue,
+    alert_risk_distribution,
+    alert_status_distribution,
     current_actor,
     investigation_notes,
     investigations_for_alert,
@@ -139,12 +141,92 @@ if page == "Dashboard":
     c3.metric("Critical Open", metrics.get("critical_open", 0))
     c4.metric("Escalated", metrics.get("escalated", 0))
 
-    st.subheader("Highest-Risk Alerts")
-    queue = alert_queue(25)
+    st.subheader("Alert Overview")
+
+    status_distribution = alert_status_distribution()
+    risk_distribution = alert_risk_distribution()
+
+    chart_left, chart_right = st.columns(2)
+
+    with chart_left:
+        st.markdown("**Alerts by Status**")
+        if status_distribution.empty:
+            st.caption("No alert status data available.")
+        else:
+            status_chart = status_distribution.copy()
+            status_chart["alert_count"] = (
+                status_chart["alert_count"].astype(int)
+            )
+            st.bar_chart(
+                status_chart.set_index("status")[["alert_count"]],
+                use_container_width=True,
+            )
+
+    with chart_right:
+        st.markdown("**Alerts by Risk Level**")
+        if risk_distribution.empty:
+            st.caption("No risk-level data available.")
+        else:
+            risk_chart = risk_distribution.copy()
+            risk_chart["alert_count"] = (
+                risk_chart["alert_count"].astype(int)
+            )
+            st.bar_chart(
+                risk_chart.set_index("risk_level")[["alert_count"]],
+                use_container_width=True,
+            )
+
+    st.subheader("Alert Queue")
+
+    filter_risk, filter_status, filter_search = st.columns([1, 1, 2])
+
+    with filter_risk:
+        selected_risk = st.selectbox(
+            "Risk level",
+            ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW"],
+            key="dashboard_risk_filter",
+        )
+
+    with filter_status:
+        selected_status = st.selectbox(
+            "Status",
+            [
+                "ALL",
+                "OPEN",
+                "ASSIGNED",
+                "ESCALATED",
+                "RESOLVED",
+                "CLOSED",
+            ],
+            key="dashboard_status_filter",
+        )
+
+    with filter_search:
+        search_text = st.text_input(
+            "Search",
+            placeholder="Transaction, customer, or alert ID",
+            key="dashboard_alert_search",
+        )
+
+    queue = alert_queue(
+        limit=200,
+        risk_level=selected_risk,
+        status=selected_status,
+        search=search_text,
+    )
+
     if queue.empty:
-        st.info("No Lakebase alerts are available yet. Run the risk pipeline first.")
+        st.info("No alerts match the selected filters.")
     else:
-        st.dataframe(queue, use_container_width=True, hide_index=True)
+        st.caption(
+            f"Showing {len(queue):,} matching alerts "
+            "(maximum 200 rows)."
+        )
+        st.dataframe(
+            queue,
+            use_container_width=True,
+            hide_index=True,
+        )
 
 elif page == "Alerts & Investigations":
     st.subheader("Alert Investigation Queue")
