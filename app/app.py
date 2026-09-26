@@ -204,8 +204,12 @@ elif page == "AI Investigator":
 
     prompt = st.chat_input("Ask why an alert was flagged or request an investigation action...")
     if prompt:
-        if selected and "alert" not in prompt.lower():
-            effective_prompt = f"Current alert_id is {selected}. User request: {prompt}"
+        if selected:
+            effective_prompt = (
+                f"Current selected alert_id is exactly {selected}. "
+                "Use this exact UUID for any alert-specific tool call. "
+                f"User request: {prompt}"
+            )
         else:
             effective_prompt = prompt
 
