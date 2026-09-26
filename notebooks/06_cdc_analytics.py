@@ -9,14 +9,6 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install "psycopg[binary]"
-
-# COMMAND ----------
-
-dbutils.library.restartPython()
-
-# COMMAND ----------
-
 from pyspark.sql import functions as F
 
 CATALOG = "bootcamp_students"
