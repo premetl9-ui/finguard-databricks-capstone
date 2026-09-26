@@ -1,1 +1,0 @@
-"""FinGuard AI investigation agent."""

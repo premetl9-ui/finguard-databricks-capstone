@@ -1,3 +1,0 @@
--- FinGuard Lakebase operational schema
--- Add CREATE TABLE statements for users, customers, fraud_alerts,
--- investigations, investigation_notes, agent_actions, and alert_status_history.

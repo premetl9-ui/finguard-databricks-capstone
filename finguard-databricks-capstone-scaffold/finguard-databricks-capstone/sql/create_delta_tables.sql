@@ -1,1 +1,0 @@
--- FinGuard Delta/Lakehouse table DDL placeholders.

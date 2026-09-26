@@ -88,13 +88,13 @@ TOOL_SCHEMAS = [
         ["alert_id"],
     ),
     _schema(
-    "assign_alert",
-    "Assign an alert. If analyst_id is omitted, assign it to the currently authenticated FinGuard user.",
-    {
-        "alert_id": {"type": "string"},
-        "analyst_id": {"type": "string"},
-    },
-    ["alert_id"],
+        "assign_alert",
+        "Assign an alert. If analyst_id is omitted, assign it to the currently authenticated FinGuard user.",
+        {
+            "alert_id": {"type": "string"},
+            "analyst_id": {"type": "string"},
+        },
+        ["alert_id"],
     ),
     _schema(
         "add_investigation_note",
@@ -121,12 +121,11 @@ TOOL_SCHEMAS = [
 
 SYSTEM_PROMPT = """You are the FinGuard investigation assistant.
 Ground conclusions in tool results. Never invent transaction, alert, customer, investigation, or market data.
-Use only the provided allowlisted tools. Never generate or request arbitrary SQL.
+Use only the exact tool names provided in the allowlist. Never invent, rename, or imply unavailable tools. Never generate or request arbitrary SQL.
 Use cached Silver FX data rather than calling a third-party API from the chat path.
 Explain risk factors clearly and keep financial-monitoring language factual.
 For escalation or resolution, request confirmation rather than claiming the action happened unless the tool result confirms success.
 """
-
 
 
 w = WorkspaceClient()

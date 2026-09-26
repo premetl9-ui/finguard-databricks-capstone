@@ -3,10 +3,6 @@
 # [tool.databricks.environment]
 # environment_version = "5"
 # ///
-spark.range(1).show()
-
-# COMMAND ----------
-
 # MAGIC %pip install "psycopg[binary]"
 
 # COMMAND ----------
@@ -126,7 +122,7 @@ def score_batch(df):
         .withColumn(
             "risk_level",
             F.when(F.col("risk_score") >= 80, "CRITICAL")
-            .when(F.col("risk_score") >= 50, "HIGH")
+            .when(F.col("risk_score") >= 60, "HIGH")
             .when(F.col("risk_score") >= 30, "MEDIUM")
             .otherwise("LOW"),
         )
@@ -151,83 +147,75 @@ def score_batch(df):
 
 # COMMAND ----------
 
-# Temporary runtime value only.
-# Do not commit the real connection string to GitHub.
-DATABASE_URL = (
-    "postgresql://premetl9%40gmail.com@ep-falling-cherry-d1cu09hi.database.us-west-2.cloud.databricks.com/databricks_postgres"
-    "?sslmode=require"
-)
-
-if not DATABASE_URL.startswith(
-    ("postgresql://", "postgres://")
-):
-    raise RuntimeError(
-        "A valid PostgreSQL connection string is required."
-    )
-
-print("PostgreSQL connection string configured.")
-
-# COMMAND ----------
-
 # MAGIC %md
-# MAGIC ## Lakebase Alert Writer
-# MAGIC Write alert candidates to PostgreSQL with idempotent transaction-based upserts.
+# MAGIC ## Secure Lakebase Connection
+# MAGIC Generate a short-lived OAuth database credential at runtime. Never commit OAuth tokens or database passwords.
 
 # COMMAND ----------
 
 import psycopg
+from databricks.sdk import WorkspaceClient
 
-PGHOST = (
-    "ep-falling-cherry-d1cu09hi."
-    "database.us-west-2.cloud.databricks.com"
+PGHOST = os.getenv("PGHOST") or spark.conf.get("finguard.lakebase.host", "")
+PGPORT = int(os.getenv("PGPORT") or spark.conf.get("finguard.lakebase.port", "5432"))
+PGDATABASE = os.getenv("PGDATABASE") or spark.conf.get(
+    "finguard.lakebase.database",
+    "databricks_postgres",
 )
-PGPORT = 5432
-PGDATABASE = "databricks_postgres"
-PGUSER = "premetl9@gmail.com"
-
-# Paste the generated OAuth database token here temporarily.
-PGPASSWORD =  "eyJraWQiOiJqblJxRmciLCJhbGciOiJSUzI1NiIsInR5cCI6ImF0K2p3dCJ9.eyJpc3MiOiJodHRwczovL2RiYy03YjEwNjE1Mi1jYWYzLmNsb3VkLmRhdGFicmlja3MuY29tL29pZGMiLCJzdWIiOiJwcmVtZXRsOUBnbWFpbC5jb20iLCJhdWQiOlsiMTM1Mjc4NTA3OTIyNDk1NCJdLCJpYXQiOjE3ODk1MjQyMzcsImV4cCI6MTc4OTUyNzgzNywianRpIjoiYmQ0MzkzNDktYWFmYy00Y2ZkLWFhZDYtZTkwMThiNDRmZGU2IiwiY2xpZW50X2lkIjoiZGItZGF0YWJhc2UtY3JlZGVudGlhbCIsInNjb3BlIjoiaWFtLmN1cnJlbnQtdXNlcjpyZWFkIGlhbS5ncm91cHM6cmVhZCBpYW0uc2VydmljZS1wcmluY2lwYWxzOnJlYWQgaWFtLnVzZXJzOnJlYWQiLCJwcml2YXRlX21ldGFkYXRhIjoiQVVQNGFXazhhcTlVUnpUNkMwaE5aeGFXQ0pqbWZTbzRlTXNFZDIyTS1KSTVFaFJjcVQ0RFVqTGthMEVZRVd1YV82UnkyU0ZuSGx5bkJSN2RPVDRRR0cwMncxMzRYNS1qQXV4VTRtSnJGNWxYd0pFaEFoN1JZb3NPSnVaVXNXbnNsTFRtV2VaSS01Y2tuLUFBOVZJcDZvTGYwOTk3VE5oQ2lqNG04OU9YaW9zIiwicGN0eCI6IkN1UURDaFFJQVJvR0NPX3hwOVVHSWdZSXplS28xUVlvQWhMOEFnR29OcVk4QWs2NGxhOG1GYjE1dmkza2hycnZCR0h0b0RacWI5N3R4b2E5UXNfZnVWOGRRdnV2bjdFZmZwcER3dHR2cEt5dHo4YjNEVk40SWdoUFN3VnNqTU9maUltRldxd054YzZsQXlDNHgzV3ZWdGNldjE1eEIzeUpxdm8zTkV0aVk4YkFQVWk2Q3FoLUZES3I0WEdKNlJjX1BwLUl6RUZZNHJna0FwWHZOd3ZuTjk0WkVrSmd1aExiN0Jic2JKN19sWnlPTHNLTDloY19hTVM0Qll5QVotOHZvcG4yNmlGQ2lyaGs1Z1A5WGdneVc0Ujc0NGlXWEt5VWJycXJ4Uk9oNFBGT3dhdF9RZDV5a2k0NjhDN0xGN2hHdXF0LXJlVG0wODFJdHlYc1dEbmk0TlM2ZUczcnFOczNjTVpsX0I0dDZ6cFNRVks3NFF6d1hLMkhfdzlKaWNleVd6QWl0UmJtT2phMklnWjV3ME50aFN1ZVBzOEpIb1FydXVSa012Q1dTWTIxaDVsbm9WYTBLckpVZnZyaE5lZ2dIYjhEbDBYRGpUdkM2djYzcG1IOVFBWmNsNXFIbEVuTXIwZ1B0ZjczY0xDNktubE5GZE5kNWIyNWlzdHVDX2Voc0dRLVltV0RHRzQzNlJPWnRkV3k4U19BbDVJSWRHZEJHazBCam5fTDFUQkdBaUVBNG5VZGJPY0t4Y1Mwajk4aWhMazlmRGZadXktOWFpY2N3aml4THJDQTJUWUNJUUQyeXhTa1FIRnZjRGxLcmV5R2pqVk5PMGdHT19EY1BJUGhMcHprTWN5TG9nPT0ifQ.UXeby6cZ_5mzX33TaWBup9wg_9m4YOb5bbm490HMOc6_c7f1Q6qIyTVhKUpWvM37wOJ4hwskAOiqeCoIFGJEG1kcEfDbmLOzPuQ_uXtAOOOoTh2g07F-6izahC6eFx2ZtvuQngIy_og8PTDci4f5QAYKZd70n3UG9EQa9NuvqfqpF3fmG-6DYMAZUl6AtWA8bvyj786-h9h_iDVGR_dER2hfl_4rbqiXqkbrnlwUVgezFhZFAQF_N4GxhjAGnt4NeHR7aV4gb8szpLEbUSk9MeykT9-0CX-rmsMaUBg5Axcyiyaj1pTugnv-SDLp74at2GjKaCK0tJolK_G5YlrGeQ" 
-
-conn = psycopg.connect(
-    host=PGHOST,
-    port=PGPORT,
-    dbname=PGDATABASE,
-    user=PGUSER,
-    password=PGPASSWORD,
-    sslmode="require",
-    connect_timeout=30,
+PGUSER = os.getenv("PGUSER") or USER_EMAIL
+LAKEBASE_ENDPOINT = os.getenv("ENDPOINT_NAME") or spark.conf.get(
+    "finguard.lakebase.endpoint",
+    "",
 )
+LAKEBASE_SCHEMA = USERNAME
 
-with conn.cursor() as cursor:
-    cursor.execute(
-        "SELECT current_database(), current_user"
+missing = []
+if not PGHOST:
+    missing.append("finguard.lakebase.host / PGHOST")
+if not LAKEBASE_ENDPOINT:
+    missing.append("finguard.lakebase.endpoint / ENDPOINT_NAME")
+
+if missing:
+    raise RuntimeError(
+        "Missing Lakebase runtime configuration: "
+        + ", ".join(missing)
+        + ". Use the Lakebase Connect dialog values; do not put credentials in source control."
     )
-    print(cursor.fetchone())
 
-conn.close()
+workspace_client = WorkspaceClient()
+
+
+def open_lakebase_connection():
+    credential = workspace_client.postgres.generate_database_credential(
+        endpoint=LAKEBASE_ENDPOINT
+    )
+    return psycopg.connect(
+        host=PGHOST,
+        port=PGPORT,
+        dbname=PGDATABASE,
+        user=PGUSER,
+        password=credential.token,
+        sslmode="require",
+        connect_timeout=30,
+    )
+
+
+with open_lakebase_connection() as connection:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT current_database(), current_user")
+        print(cursor.fetchone())
 
 # COMMAND ----------
 
-def write_alert_partition(rows):
+def write_alert_rows(alert_df):
     """
-    Write one Spark partition to Lakebase/PostgreSQL.
+    Write alert candidates to Lakebase on the driver using a fresh OAuth credential.
 
-    transaction_id makes fraud-alert writes idempotent.
+    This driver-side pattern is appropriate for the capstone/demo alert volume.
+    For larger production volumes, use a scalable sink with managed credential rotation.
     """
-    import psycopg
-
-    conn = psycopg.connect(
-    host=PGHOST,
-    port=PGPORT,
-    dbname=PGDATABASE,
-    user=PGUSER,
-    password=PGPASSWORD,
-    sslmode="require",
-    connect_timeout=30,
-    )
-
-    customer_sql = """
-        INSERT INTO premetl9.customers (
+    customer_sql = f"""
+        INSERT INTO {LAKEBASE_SCHEMA}.customers (
             customer_id
         )
         VALUES (%s)
@@ -235,8 +223,8 @@ def write_alert_partition(rows):
         DO NOTHING
     """
 
-    alert_sql = """
-        INSERT INTO premetl9.fraud_alerts (
+    alert_sql = f"""
+        INSERT INTO {LAKEBASE_SCHEMA}.fraud_alerts (
             transaction_id,
             customer_id,
             risk_score,
@@ -260,33 +248,29 @@ def write_alert_partition(rows):
             updated_at = CURRENT_TIMESTAMP
     """
 
-    try:
-        with conn.cursor() as cursor:
-            for row in rows:
-                cursor.execute(
-                    customer_sql,
-                    (row.customer_id,),
-                )
+    with open_lakebase_connection() as conn:
+        try:
+            with conn.cursor() as cursor:
+                for row in alert_df.toLocalIterator():
+                    cursor.execute(
+                        customer_sql,
+                        (row.customer_id,),
+                    )
+                    cursor.execute(
+                        alert_sql,
+                        (
+                            row.transaction_id,
+                            row.customer_id,
+                            int(row.risk_score),
+                            row.risk_level,
+                            "; ".join(row.risk_reasons or []),
+                        ),
+                    )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
-                cursor.execute(
-                    alert_sql,
-                    (
-                        row.transaction_id,
-                        row.customer_id,
-                        int(row.risk_score),
-                        row.risk_level,
-                        "; ".join(row.risk_reasons or []),
-                    ),
-                )
-
-        conn.commit()
-
-    except Exception:
-        conn.rollback()
-        raise
-
-    finally:
-        conn.close()
 
 # COMMAND ----------
 
@@ -316,7 +300,7 @@ def process_microbatch(batch_df, batch_id: int):
         "transaction_id", "customer_id", "risk_score", "risk_level", "risk_reasons"
     )
     if not alerts.isEmpty():
-        alerts.foreachPartition(write_alert_partition)
+        write_alert_rows(alerts)
 
     latency = scored.select(
         F.expr("percentile_approx(unix_timestamp(scored_at) - unix_timestamp(event_timestamp), 0.95)").alias(
@@ -362,25 +346,17 @@ print(
 
 # COMMAND ----------
 
-with psycopg.connect(
-    host=PGHOST,
-    port=PGPORT,
-    dbname=PGDATABASE,
-    user=PGUSER,
-    password=PGPASSWORD,
-    sslmode="require",
-    connect_timeout=30,
-) as connection:
+with open_lakebase_connection() as connection:
     with connection.cursor() as cursor:
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT COUNT(*)
-            FROM premetl9.fraud_alerts
+            FROM {LAKEBASE_SCHEMA}.fraud_alerts
         """)
         alert_count = cursor.fetchone()[0]
 
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT COUNT(*)
-            FROM premetl9.customers
+            FROM {LAKEBASE_SCHEMA}.customers
         """)
         customer_count = cursor.fetchone()[0]
 
@@ -394,22 +370,14 @@ print(f"Lakebase customers: {customer_count:,}")
 
 # COMMAND ----------
 
-with psycopg.connect(
-    host=PGHOST,
-    port=PGPORT,
-    dbname=PGDATABASE,
-    user=PGUSER,
-    password=PGPASSWORD,
-    sslmode="require",
-    connect_timeout=30,
-) as connection:
+with open_lakebase_connection() as connection:
     with connection.cursor() as cursor:
-        cursor.execute("""
+        cursor.execute(f"""
             SELECT
                 risk_level,
                 status,
                 COUNT(*) AS alert_count
-            FROM premetl9.fraud_alerts
+            FROM {LAKEBASE_SCHEMA}.fraud_alerts
             GROUP BY risk_level, status
             ORDER BY alert_count DESC
         """)

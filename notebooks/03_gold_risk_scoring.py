@@ -104,7 +104,7 @@ scored = (
     .withColumn(
         "risk_level",
         F.when(F.col("risk_score") >= 80, "CRITICAL")
-        .when(F.col("risk_score") >= 50, "HIGH")
+        .when(F.col("risk_score") >= 60, "HIGH")
         .when(F.col("risk_score") >= 30, "MEDIUM")
         .otherwise("LOW"),
     )

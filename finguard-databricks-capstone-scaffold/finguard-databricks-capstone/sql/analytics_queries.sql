@@ -1,1 +1,0 @@
--- FinGuard analytics query placeholders.

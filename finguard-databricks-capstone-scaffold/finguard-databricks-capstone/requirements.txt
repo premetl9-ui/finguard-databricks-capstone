@@ -1,5 +1,0 @@
-pyspark
-requests
-pandas
-pyyaml
-psycopg[binary]

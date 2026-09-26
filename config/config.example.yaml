@@ -1,21 +1,26 @@
 project:
-  catalog: finguard
-  bronze_schema: bronze
-  silver_schema: silver
-  gold_schema: gold
-  operations_schema: operations
-  cdc_schema: lakebase_cdc
+  catalog: bootcamp_students
+  derive_username_from_session: true
+  bronze_schema_suffix: _bronze
+  silver_schema_suffix: _silver
+  gold_schema_suffix: _gold
+  operations_schema_suffix: _operations
+  cdc_schema_suffix: _lakebase_cdc
 
 transactions:
   source_format: csv
-  source_path: /Volumes/finguard/raw/paysim
-  checkpoint_path: /Volumes/finguard/operations/checkpoints/transaction_risk_v1
+  raw_volume_name: raw
+  paysim_subdirectory: paysim
+  checkpoint_volume_name: checkpoints
+  checkpoint_name: transaction_risk_v1
   default_currency: USD
   home_currency: USD
   high_value_threshold: 10000
 
 fx:
   provider: alpha_vantage
+  secret_scope: finguard
+  secret_key: alpha-vantage-api-key
   current_refresh_hours: 6
   daily_refresh_hour_utc: 1
   currency_pairs:
@@ -32,8 +37,19 @@ streaming:
   p95_latency_target_seconds: 60
 
 risk:
-  alert_threshold: 60
+  alert_threshold: 50
+  high_threshold: 60
   critical_threshold: 80
 
+lakebase:
+  project: FinGuard-Lakebase
+  branch: production
+  database: databricks_postgres
+  derive_schema_from_user: true
+  app_resource_key: postgres
+  # Supply host and full endpoint resource name at runtime.
+  # Never place an OAuth token or password in this file.
+
 model:
+  app_resource_key: llm
   endpoint: databricks-meta-llama-3-3-70b-instruct
