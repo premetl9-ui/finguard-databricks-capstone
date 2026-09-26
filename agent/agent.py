@@ -5,6 +5,7 @@ import os
 from typing import Any
 
 from openai import OpenAI
+from databricks.sdk import WorkspaceClient
 
 from tools import Actor, TOOL_REGISTRY
 
@@ -124,8 +125,6 @@ For escalation or resolution, request confirmation rather than claiming the acti
 """
 
 
-from databricks.sdk import WorkspaceClient
-from openai import OpenAI
 
 w = WorkspaceClient()
 
