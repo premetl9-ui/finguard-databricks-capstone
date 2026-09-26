@@ -156,16 +156,52 @@ def score_batch(df):
 import psycopg
 from databricks.sdk import WorkspaceClient
 
-PGHOST = os.getenv("PGHOST") or spark.conf.get("finguard.lakebase.host", "")
-PGPORT = int(os.getenv("PGPORT") or spark.conf.get("finguard.lakebase.port", "5432"))
-PGDATABASE = os.getenv("PGDATABASE") or spark.conf.get(
-    "finguard.lakebase.database",
-    "databricks_postgres",
+
+def runtime_parameter(name: str, default: str = "") -> str:
+    """Read a Databricks Job notebook parameter, falling back to a default."""
+    try:
+        dbutils.widgets.text(name, default)
+        value = dbutils.widgets.get(name).strip()
+        return value or default
+    except Exception:
+        return default
+
+
+PGHOST = (
+    os.getenv("PGHOST")
+    or runtime_parameter(
+        "lakebase_host",
+        spark.conf.get("finguard.lakebase.host", ""),
+    )
 )
+
+PGPORT = int(
+    os.getenv("PGPORT")
+    or runtime_parameter(
+        "lakebase_port",
+        spark.conf.get("finguard.lakebase.port", "5432"),
+    )
+)
+
+PGDATABASE = (
+    os.getenv("PGDATABASE")
+    or runtime_parameter(
+        "lakebase_database",
+        spark.conf.get(
+            "finguard.lakebase.database",
+            "databricks_postgres",
+        ),
+    )
+)
+
 PGUSER = os.getenv("PGUSER") or USER_EMAIL
-LAKEBASE_ENDPOINT = os.getenv("ENDPOINT_NAME") or spark.conf.get(
-    "finguard.lakebase.endpoint",
-    "",
+
+LAKEBASE_ENDPOINT = (
+    os.getenv("ENDPOINT_NAME")
+    or runtime_parameter(
+        "lakebase_endpoint",
+        spark.conf.get("finguard.lakebase.endpoint", ""),
+    )
 )
 LAKEBASE_SCHEMA = USERNAME
 
