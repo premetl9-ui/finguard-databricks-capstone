@@ -14,3 +14,6 @@ env:
 
   - name: FINGUARD_DB_SCHEMA
     value: premetl9
+
+  - name: FINGUARD_MODEL_ENDPOINT
+    valueFrom: llm

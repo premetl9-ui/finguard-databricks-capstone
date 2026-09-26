@@ -124,15 +124,24 @@ For escalation or resolution, request confirmation rather than claiming the acti
 """
 
 
+from databricks.sdk import WorkspaceClient
+from openai import OpenAI
+
+w = WorkspaceClient()
+
 def _client() -> OpenAI:
-    base_url = os.getenv("DATABRICKS_OPENAI_BASE_URL")
-    token = os.getenv("DATABRICKS_TOKEN")
-    if not base_url or not token:
-        raise RuntimeError(
-            "Set DATABRICKS_OPENAI_BASE_URL and DATABRICKS_TOKEN, or map the equivalent "
-            "Databricks App/AI Gateway resource credentials to these variables."
-        )
-    return OpenAI(api_key=token, base_url=base_url)
+    headers = w.config.authenticate()
+
+    auth = headers.get("Authorization", "")
+    token = auth.removeprefix("Bearer ").strip()
+
+    if not token:
+        raise RuntimeError("Unable to obtain Databricks OAuth token")
+
+    return OpenAI(
+        api_key=token,
+        base_url=f"{w.config.host.rstrip('/')}/serving-endpoints",
+    )
 
 
 def _execute_tool(actor: Actor, name: str, arguments: dict[str, Any], confirm_high_impact: bool):
