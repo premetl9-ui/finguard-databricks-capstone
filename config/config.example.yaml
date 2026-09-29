@@ -19,7 +19,7 @@ transactions:
 
 fx:
   provider: alpha_vantage
-  secret_scope: store_secrets
+  secret_scope: premetl9-dataexpert
   secret_key: alpha-vantage-api-key
   current_refresh_hours: 6
   daily_refresh_hour_utc: 1
