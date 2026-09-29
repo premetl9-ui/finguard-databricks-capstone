@@ -199,7 +199,17 @@ silver_stats = (
     .first()
 )
 
-quarantine_rows = table_count(QUARANTINE)
+quarantine_stats = (
+    spark.table(QUARANTINE)
+    .agg(
+        F.count("*").alias("row_count"),
+        F.countDistinct("transaction_id").alias("unique_count"),
+    )
+    .first()
+)
+
+quarantine_rows = quarantine_stats["row_count"]
+quarantine_unique = quarantine_stats["unique_count"]
 
 add_check(
     "bronze_has_rows",
@@ -232,13 +242,19 @@ add_check(
 add_check(
     "bronze_equals_silver_plus_quarantine",
     bronze_stats["row_count"]
-    == silver_stats["row_count"] + quarantine_rows,
+    == silver_stats["row_count"] + quarantine_unique,
     (
         f"bronze={bronze_stats['row_count']}; "
         f"silver={silver_stats['row_count']}; "
-        f"quarantine={quarantine_rows}"
+        f"quarantine_unique={quarantine_unique}; "
+        f"quarantine_physical_rows={quarantine_rows}"
     ),
-    "bronze_rows = silver_rows + quarantine_rows",
+    "bronze_rows = silver_rows + distinct_quarantined_transactions",
+    (
+        "Quarantine reconciliation uses distinct transaction_id values because "
+        "historical pipeline reruns may have appended duplicate quarantine audit rows. "
+        "Current notebook 02 prevents new duplicates."
+    ),
 )
 
 # COMMAND ----------
