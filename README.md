@@ -225,7 +225,7 @@ Login
 
 Do not commit credentials. The project expects secrets and short-lived credentials to be supplied through Databricks secret scopes, Databricks App resources, OAuth, or runtime configuration.
 
-The Alpha Vantage API key is stored in the Databricks secret scope `store_secrets` under the key `alpha-vantage-api-key`, outside source control. The Databricks App does not require a personal access token for AI model calls.
+The Alpha Vantage API key is stored in the Databricks secret scope `premetl9-dataexpert` under the key `alpha-vantage-api-key`, outside source control. The Databricks App does not require a personal access token for AI model calls.
 
 
 ## Automation
