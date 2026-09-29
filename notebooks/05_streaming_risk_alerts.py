@@ -167,30 +167,35 @@ def runtime_parameter(name: str, default: str = "") -> str:
         return default
 
 
+def safe_spark_conf(name: str, default: str = "") -> str:
+    """Read an optional Spark config without failing when the key is unavailable."""
+    try:
+        value = spark.conf.get(name)
+        return value.strip() if isinstance(value, str) else value
+    except Exception:
+        return default
+
+
+# Prefer environment variables, then Lakeflow Job notebook parameters.
+# Spark config is only an optional fallback for interactive notebook runs.
 PGHOST = (
     os.getenv("PGHOST")
-    or runtime_parameter(
-        "lakebase_host",
-        spark.conf.get("finguard.lakebase.host", ""),
-    )
+    or runtime_parameter("lakebase_host")
+    or safe_spark_conf("finguard.lakebase.host")
 )
 
 PGPORT = int(
     os.getenv("PGPORT")
-    or runtime_parameter(
-        "lakebase_port",
-        spark.conf.get("finguard.lakebase.port", "5432"),
-    )
+    or runtime_parameter("lakebase_port")
+    or safe_spark_conf("finguard.lakebase.port", "5432")
 )
 
 PGDATABASE = (
     os.getenv("PGDATABASE")
-    or runtime_parameter(
-        "lakebase_database",
-        spark.conf.get(
-            "finguard.lakebase.database",
-            "databricks_postgres",
-        ),
+    or runtime_parameter("lakebase_database")
+    or safe_spark_conf(
+        "finguard.lakebase.database",
+        "databricks_postgres",
     )
 )
 
@@ -198,10 +203,8 @@ PGUSER = os.getenv("PGUSER") or USER_EMAIL
 
 LAKEBASE_ENDPOINT = (
     os.getenv("ENDPOINT_NAME")
-    or runtime_parameter(
-        "lakebase_endpoint",
-        spark.conf.get("finguard.lakebase.endpoint", ""),
-    )
+    or runtime_parameter("lakebase_endpoint")
+    or safe_spark_conf("finguard.lakebase.endpoint")
 )
 LAKEBASE_SCHEMA = USERNAME
 
