@@ -9,7 +9,6 @@
 
 # COMMAND ----------
 
-from delta.tables import DeltaTable
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
@@ -109,9 +108,24 @@ quality = (
 invalid = quality.filter(F.col("dq_error").isNotNull())
 valid = quality.filter(F.col("dq_error").isNull()).drop("dq_error")
 
-if invalid.limit(1).count() > 0:
+# Keep quarantine idempotent across scheduled pipeline reruns.
+if spark.catalog.tableExists(QUARANTINE):
+    existing_quarantine_ids = (
+        spark.table(QUARANTINE)
+        .select("transaction_id")
+        .dropDuplicates()
+    )
+    invalid_to_write = invalid.join(
+        existing_quarantine_ids,
+        on="transaction_id",
+        how="left_anti",
+    )
+else:
+    invalid_to_write = invalid
+
+if invalid_to_write.limit(1).count() > 0:
     (
-        invalid.withColumn("quarantined_at", F.current_timestamp())
+        invalid_to_write.withColumn("quarantined_at", F.current_timestamp())
         .write.format("delta")
         .mode("append")
         .option("mergeSchema", "true")
@@ -275,18 +289,37 @@ features = (
     )
 )
 
-# Idempotent Silver upsert keyed by transaction_id.
-target = DeltaTable.forName(spark, SILVER)
-(
-    target.alias("t")
-    .merge(features.alias("s"), "t.transaction_id = s.transaction_id")
-    .whenMatchedUpdateAll()
-    .whenNotMatchedInsertAll()
-    .execute()
-)
+# Silver is append-only for immutable transaction events.
+# This keeps downstream Structured Streaming compatible with the Delta source.
+if spark.catalog.tableExists(SILVER):
+    existing_silver_ids = (
+        spark.table(SILVER)
+        .select("transaction_id")
+        .dropDuplicates()
+    )
+    silver_to_write = features.join(
+        existing_silver_ids,
+        on="transaction_id",
+        how="left_anti",
+    )
+else:
+    silver_to_write = features
+
+silver_rows_to_append = silver_to_write.count()
+
+if silver_rows_to_append > 0:
+    (
+        silver_to_write.write.format("delta")
+        .mode("append")
+        .option("mergeSchema", "true")
+        .saveAsTable(SILVER)
+    )
+    print(f"Silver rows appended: {silver_rows_to_append:,}")
+else:
+    print("No new Silver rows to append.")
 
 print(f"Silver valid/scorable rows processed: {features.count():,}")
-print(f"Quarantined rows this run: {invalid.count():,}")
+print(f"New quarantined rows this run: {invalid_to_write.count():,}")
 
 # COMMAND ----------
 
