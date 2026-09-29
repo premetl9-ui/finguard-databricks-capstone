@@ -170,7 +170,7 @@ print(f"Currency pairs: {pairs}")
 
 # COMMAND ----------
 
-SECRET_SCOPE = "store_secrets"
+SECRET_SCOPE = "premetl9-dataexpert"
 SECRET_KEY = "alpha-vantage-api-key"
 
 api_key = None
