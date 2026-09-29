@@ -157,9 +157,17 @@ if page == "Dashboard":
             status_chart["alert_count"] = (
                 status_chart["alert_count"].astype(int)
             )
+
+            status_counts = "  •  ".join(
+                f"{row.status}: {int(row.alert_count):,}"
+                for row in status_chart.itertuples(index=False)
+            )
+            st.caption(status_counts)
+
             st.bar_chart(
                 status_chart.set_index("status")[["alert_count"]],
                 use_container_width=True,
+                height=240,
             )
 
     with chart_right:
@@ -171,9 +179,17 @@ if page == "Dashboard":
             risk_chart["alert_count"] = (
                 risk_chart["alert_count"].astype(int)
             )
+
+            risk_counts = "  •  ".join(
+                f"{row.risk_level}: {int(row.alert_count):,}"
+                for row in risk_chart.itertuples(index=False)
+            )
+            st.caption(risk_counts)
+
             st.bar_chart(
                 risk_chart.set_index("risk_level")[["alert_count"]],
                 use_container_width=True,
+                height=240,
             )
 
     st.subheader("Alert Queue")
