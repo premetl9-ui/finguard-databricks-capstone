@@ -360,7 +360,14 @@ def process_microbatch(batch_df, batch_id: int):
 
 # COMMAND ----------
 
-stream = spark.readStream.table(SILVER)
+# Historical versions of Silver contain MERGE commits from earlier runs.
+# Skip those update commits so the existing checkpoint can advance. New Silver
+# writes are append-only, so future transaction inserts remain streamable.
+stream = (
+    spark.readStream
+    .option("skipChangeCommits", "true")
+    .table(SILVER)
+)
 
 query = (
     stream.writeStream
