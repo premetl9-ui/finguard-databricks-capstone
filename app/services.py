@@ -152,8 +152,15 @@ def operational_metrics() -> dict[str, Any]:
           count(*) AS total_alerts,
           count(*) FILTER (WHERE status NOT IN ('RESOLVED', 'CLOSED')) AS open_alerts,
           count(*) FILTER (WHERE risk_level = 'CRITICAL' AND status NOT IN ('RESOLVED', 'CLOSED')) AS critical_open,
-          count(*) FILTER (WHERE status = 'ESCALATED') AS escalated
+          count(*) FILTER (WHERE status = 'ESCALATED') AS escalated,
+          count(*) FILTER (WHERE status IN ('RESOLVED', 'CLOSED')) AS resolved
         FROM fraud_alerts
         """
     )
-    return row or {"total_alerts": 0, "open_alerts": 0, "critical_open": 0, "escalated": 0}
+    return row or {
+        "total_alerts": 0,
+        "open_alerts": 0,
+        "critical_open": 0,
+        "escalated": 0,
+        "resolved": 0,
+    }
