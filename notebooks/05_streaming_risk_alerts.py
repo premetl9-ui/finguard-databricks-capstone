@@ -221,10 +221,10 @@ if missing:
         + ". Use the Lakebase Connect dialog values; do not put credentials in source control."
     )
 
-workspace_client = WorkspaceClient()
-
-
 def open_lakebase_connection():
+    # Create the SDK client inside the function so the foreachBatch callback
+    # does not capture a non-serializable client object under Spark Connect.
+    workspace_client = WorkspaceClient()
     credential = workspace_client.postgres.generate_database_credential(
         endpoint=LAKEBASE_ENDPOINT
     )
@@ -326,7 +326,10 @@ def process_microbatch(batch_df, batch_id: int):
     batch_df = batch_df.filter(F.col("data_quality_status").isin("VALID", "STALE_FX_RATE"))
     scored = score_batch(batch_df)
 
-    target = DeltaTable.forName(spark, RISK)
+    # Spark Connect requires foreachBatch callbacks to use the micro-batch
+    # DataFrame's Spark session instead of capturing the outer global session.
+    batch_spark = batch_df.sparkSession
+    target = DeltaTable.forName(batch_spark, RISK)
     (
         target.alias("t")
         .merge(scored.alias("s"), "t.transaction_id = s.transaction_id")
