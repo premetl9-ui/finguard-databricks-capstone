@@ -7,8 +7,8 @@ variables:
     default: ep-falling-cherry-d1cu09hi.database.us-west-2.cloud.databricks.com
 
   lakebase_endpoint:
-    description: Full Lakebase endpoint resource name, for example projects/<project-id>/branches/<branch-id>/endpoints/<endpoint-id>.
-    default: ""
+    description: Full Lakebase endpoint resource name
+    default: "projects/finguard-lakebase/branches/production/endpoints/primary"
 
   lakebase_database:
     description: Lakebase PostgreSQL database.
