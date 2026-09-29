@@ -135,11 +135,12 @@ page = st.sidebar.radio("Navigation", ["Dashboard", "Alerts & Investigations", "
 
 if page == "Dashboard":
     metrics = operational_metrics()
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Total Alerts", metrics.get("total_alerts", 0))
     c2.metric("Open Alerts", metrics.get("open_alerts", 0))
     c3.metric("Critical Open", metrics.get("critical_open", 0))
     c4.metric("Escalated", metrics.get("escalated", 0))
+    c5.metric("Resolved", metrics.get("resolved", 0))
 
     st.subheader("Alert Overview")
 
