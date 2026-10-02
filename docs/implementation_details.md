@@ -79,7 +79,7 @@ The corresponding Unity Catalog history tables are stored under the user-specifi
 - agent action count
 - agent action success rate
 
-The deployed CDC Analytics Refresh job is configured every **5 minutes** and is committed in a PAUSED state for cost control. It has also been run successfully manually.
+The deployed CDC Analytics Refresh job is configured every **5 minutes** and is committed in a PAUSED state for cost control. The final deployed implementation is `notebooks/09_incremental_cdc_analytics.py`, which uses per-source watermarks, a five-minute overlap window, idempotent MERGE fact tables, and `cdc_analytics_run_history` monitoring. `notebooks/06_cdc_analytics.py` is retained as the earlier full-refresh reference implementation.
 
 ## Transaction Streaming Runtime
 
@@ -96,6 +96,8 @@ The final implementation uses:
 - Lakebase sink: `INSERT ... ON CONFLICT DO UPDATE` with a unique `fraud_alerts.transaction_id`
 
 This design supports reruns without creating duplicate business transactions or alerts.
+
+Notebook 05 also writes production streaming monitoring to `bootcamp_students.<username>_operations.streaming_batch_metrics`. Each processed batch records batch ID, timestamps, scored rows, alert rows, Silver-to-score p95 latency, Lakebase write duration, total batch duration, checkpoint path, and success status.
 
 ## Velocity Measurement
 
@@ -156,14 +158,15 @@ Implemented guardrails:
 
 ## Final Automation
 
-The final Databricks bundle defines four jobs:
+The final Databricks bundle defines five jobs:
 
 - **FinGuard - Main Transaction Pipeline**
 - **FinGuard - FX Refresh**
 - **FinGuard - CDC Analytics Refresh**
 - **FinGuard - Velocity Validation**
+- **FinGuard - Performance Evidence**
 
-All four jobs have now been deployed. The Main Transaction Pipeline, FX Refresh, CDC Analytics Refresh, and Velocity Validation workflows have been exercised. The Velocity Validation job produced repeatable PASS evidence with p95 latency below 60 seconds.
+The bundle now defines five jobs. The Main Transaction Pipeline, FX Refresh, CDC Analytics Refresh, and Velocity Validation workflows have been exercised; the Performance Evidence job is an isolated manual evidence workflow that should be run once before final submission. The Main Transaction Pipeline, FX Refresh, CDC Analytics Refresh, and Velocity Validation workflows have been exercised. The Velocity Validation job produced repeatable PASS evidence with p95 latency below 60 seconds.
 
 ## Final Validated Results
 
