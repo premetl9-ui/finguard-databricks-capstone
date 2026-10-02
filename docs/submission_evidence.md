@@ -116,32 +116,59 @@ LIMIT 10;
 Velocity can now be claimed as demonstrated: the measured Databricks runs passed with p95 well under 60 seconds, and the clean rerun records 10 source input rows with batch_id 1 on the persistent checkpoint.
 
 
-## Incremental CDC Evidence — Added
+## Incremental CDC Evidence — Captured
 
 The deployed CDC Analytics Refresh job now uses `notebooks/09_incremental_cdc_analytics.py`.
 
-Capture after the first successful run:
-
-- `cdc_analytics_state` showing one watermark per source.
-- `cdc_analytics_run_history` showing a successful run.
-- Gold `gold_alert_summary` results after the incremental refresh.
-
-A second run with no new operational changes should succeed without duplicating fact rows, demonstrating re-runnability and idempotence.
-
-## Performance Evidence — Added
-
-Run **FinGuard - Performance Evidence** once and capture:
-
-- Bronze, Silver, and Gold row counts.
-- Delta `num_files` and `size_bytes`.
-- Clustering-column metadata.
-- Representative count, risk-distribution, and customer-lookup timings.
-
-Results are stored in:
+Captured evidence shows **two SUCCESS runs**.
 
 ```text
-bootcamp_students.premetl9_operations.performance_evidence_results
+Initialization run window:
+alerts=3025, status=4, investigations=1, actions=6
+
+Second incremental run window:
+alerts=4, status=4, investigations=1, actions=4
+
+Stable fact counts after both runs:
+alerts_fact_rows=3021
+status_fact_rows=4
+investigation_fact_rows=1
+action_fact_rows=6
+gold_dates=2
 ```
+
+The second run re-read only the watermark overlap and did not grow the fact counts, demonstrating idempotent incremental processing. `cdc_analytics_state` contains persisted watermarks for all four sources.
+
+## Performance Evidence — Captured
+
+Captured Performance Evidence results:
+
+```text
+Bronze:
+rows=6,362,620
+files=4
+size_bytes=391,953,413
+clustering=['event_date']
+count_query_seconds=1.256
+
+Silver:
+rows=6,362,604
+files=6
+size_bytes=370,860,036
+clustering=['event_date','customer_id']
+count_query_seconds=0.498
+
+Gold risk:
+rows=6,362,604
+files=5
+size_bytes=323,735,556
+clustering=['event_date','customer_id']
+count_query_seconds=0.449
+risk_distribution_seconds=2.714
+customer_lookup_seconds=1.836
+```
+
+Results are persisted in `bootcamp_students.premetl9_operations.performance_evidence_results`.
 
 ## Production Streaming Monitoring — Added
 
