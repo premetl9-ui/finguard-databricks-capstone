@@ -59,8 +59,8 @@ CHECKPOINT = (
 # Match the corrected threshold used in notebook 03.
 ALERT_THRESHOLD = 50
 
-# Streaming micro-batch interval.
-TRIGGER_SECONDS = 10
+# The query uses an availableNow trigger so each scheduled run processes all
+# Silver rows that have arrived since the persisted checkpoint.
 
 # Create the Operations schema and checkpoint volume.
 spark.sql(
@@ -81,7 +81,7 @@ print(f"Silver source: {SILVER}")
 print(f"Gold risk target: {RISK}")
 print(f"Checkpoint: {CHECKPOINT}")
 print(f"Alert threshold: {ALERT_THRESHOLD}")
-print(f"Trigger interval: {TRIGGER_SECONDS} seconds")
+print("Streaming trigger: availableNow (incremental from checkpoint)")
 
 # COMMAND ----------
 
@@ -135,6 +135,7 @@ def score_batch(df):
             "destination_id",
             "event_timestamp",
             "event_date",
+            "processed_at",
             "amount_home_currency",
             "risk_score",
             "risk_level",
@@ -345,11 +346,14 @@ def process_microbatch(batch_df, batch_id: int):
         write_alert_rows(alerts)
 
     latency = scored.select(
-        F.expr("percentile_approx(unix_timestamp(scored_at) - unix_timestamp(event_timestamp), 0.95)").alias(
+        F.expr("percentile_approx(unix_timestamp(scored_at) - unix_timestamp(processed_at), 0.95)").alias(
             "p95_seconds"
         )
     ).first()["p95_seconds"]
-    print(f"batch_id={batch_id}, scored={scored.count()}, alerts={alerts.count()}, p95_seconds={latency}")
+    print(
+        f"batch_id={batch_id}, scored={scored.count()}, alerts={alerts.count()}, "
+        f"silver_to_score_p95_seconds={latency}"
+    )
 
 
 # COMMAND ----------
