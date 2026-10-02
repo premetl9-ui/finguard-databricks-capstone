@@ -166,7 +166,7 @@ The Databricks App uses its service-principal OAuth identity for model access. L
 6. Run `notebooks/03_gold_risk_scoring.py`.
 7. Create the Lakebase operational schema with `sql/create_lakebase_tables.sql`.
 8. Configure Lakebase runtime connection values and run `notebooks/05_streaming_risk_alerts.py`.
-9. Configure Lakebase CDC and run `notebooks/06_cdc_analytics.py`.
+9. Configure Lakebase CDC and run `notebooks/09_incremental_cdc_analytics.py` (final incremental implementation). `notebooks/06_cdc_analytics.py` remains as the earlier full-refresh reference.
 10. Deploy the repository root as the Databricks App.
 11. Add the Lakebase `postgres` resource and the model endpoint `llm` resource.
 12. Grant the App service principal access to the existing Lakebase schema/tables.
@@ -269,6 +269,24 @@ The deployed **FinGuard - CDC Analytics Refresh** job now runs `notebooks/09_inc
 
 The original `notebooks/06_cdc_analytics.py` is retained as the earlier full-refresh reference implementation.
 
+### Validated Incremental CDC Evidence
+
+Two consecutive incremental CDC runs completed with `status = SUCCESS`. The first run initialized the compact fact state from the CDC history. The second run used the persisted watermarks and a five-minute overlap window, reading only a small overlap while keeping fact counts unchanged:
+
+```text
+Run 1 window rows:
+alerts=3025, status=4, investigations=1, actions=6
+
+Run 2 window rows:
+alerts=4, status=4, investigations=1, actions=4
+
+Fact rows after both runs:
+alerts=3021, status=4, investigations=1, actions=6
+gold_dates=2
+```
+
+The unchanged fact counts on the second run demonstrate idempotent overlap processing. Persisted watermarks are present for `fraud_alerts`, `alert_status_history`, `investigations`, and `agent_actions`.
+
 Notebook 05 also persists production streaming-batch monitoring to:
 
 ```text
@@ -276,6 +294,18 @@ bootcamp_students.<username>_operations.streaming_batch_metrics
 ```
 
 including batch ID, scored rows, alert rows, Silver-to-score p95 latency, Lakebase write duration, total batch duration, checkpoint path, and status.
+
+### Validated Performance Evidence
+
+The Performance Evidence job captured the physical scale and representative query timings of the final Lakehouse:
+
+| Table | Rows | Delta files | Size bytes | Clustering | Count query |
+| --- | ---: | ---: | ---: | --- | ---: |
+| Bronze transactions | 6,362,620 | 4 | 391,953,413 | event_date | 1.256 s |
+| Silver transactions | 6,362,604 | 6 | 370,860,036 | event_date, customer_id | 0.498 s |
+| Gold transaction risk | 6,362,604 | 5 | 323,735,556 | event_date, customer_id | 0.449 s |
+
+Representative Gold queries completed in approximately **2.714 s** for risk distribution and **1.836 s** for a customer-risk lookup.
 
 ## Big Data Evidence
 
