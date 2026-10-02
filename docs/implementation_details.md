@@ -1,39 +1,66 @@
 # FinGuard Implementation Details
 
-This document captures the implementation-level clarifications requested after the capstone proposal review.
+This document describes the final implemented FinGuard capstone rather than the original proposal.
 
 ## Frontend and Service Layer
 
-FinGuard will use **Streamlit with Python** for the Databricks App frontend. The browser will communicate only with the Streamlit/Python backend; it will not connect directly to Lakebase or Delta tables.
+FinGuard uses **Streamlit with Python** as a deployed Databricks App. The browser interacts with the Streamlit/Python backend; it does not connect directly to Lakebase or Delta tables.
 
-The backend service layer will contain modules such as:
+The application code is organized under:
 
-- `agent_service.py`
-- `alert_service.py`
-- `investigation_service.py`
-- `authorization_service.py`
+- `app/app.py` for the Streamlit UI.
+- `app/services.py` for dashboard and investigation service calls.
+- `agent/agent.py` for model orchestration and tool calling.
+- `agent/tools.py` for allowlisted read/write tools.
+- `src/finguard/lakebase.py` for Lakebase connectivity.
+- `src/finguard/lakehouse.py` for governed Lakehouse reads.
 
-Lakebase reads and writes will be performed server-side through the PostgreSQL Python driver (`psycopg`) using the Databricks App service-principal identity. Delta/Gold analytics will be accessed through Databricks SQL using the app identity and Unity Catalog grants.
+The implemented agent tool surface includes:
 
-The main application tool/API surface will include:
-
+### Read tools
 - `get_alert(alert_id)`
+- `list_open_alerts(limit)`
 - `get_transaction(transaction_id)`
-- `get_customer_transactions(customer_id)`
+- `get_customer_transactions(customer_id, limit)`
 - `get_customer_risk_profile(customer_id)`
+- `get_exchange_rate(from_currency, to_currency)`
+- `get_investigation_notes(alert_id)`
+
+### Write/action tools
+- `create_investigation(alert_id, summary)`
 - `assign_alert(alert_id, analyst_id)`
-- `escalate_alert(alert_id)`
+- `add_investigation_note(investigation_id, note)`
+- `update_alert_status(alert_id, new_status, reason)`
+- `escalate_alert(alert_id, reason)`
 - `resolve_alert(alert_id, resolution)`
-- `add_investigation_note(alert_id, note)`
-- `update_alert_status(alert_id, status)`
 
-Before any write-capable tool executes, the backend will validate the authenticated user, role, arguments, and current alert/investigation state.
+Write-capable tools validate the authenticated user, role, arguments, and current alert state. High-impact status changes require explicit confirmation in the app before execution.
 
-## Lakebase to Delta CDC
+## Lakebase Operational Model
 
-FinGuard will use **native Lakebase Change Data Feed (CDF)** as the preferred Lakebase-to-Delta CDC path, subject to workspace availability. Operational tables will use `REPLICA IDENTITY FULL` so updates can expose complete before/after row information.
+The implemented Lakebase schema contains:
 
-Planned source tables:
+- `users`
+- `customers`
+- `fraud_alerts`
+- `investigations`
+- `investigation_notes`
+- `agent_actions`
+- `alert_status_history`
+
+The schema defines primary keys, foreign keys, CHECK constraints, unique transaction IDs, timestamps, updated-at triggers, and indexes for alert queues, assignments, investigations, notes, agent actions, and status history.
+
+The application reads from and writes to these tables through server-side `psycopg` connections.
+
+## Lakebase Authentication
+
+Notebook 05 and the Databricks App do not store database passwords in source code.
+
+Notebook 05 accepts Lakebase connection metadata as Job parameters and generates a short-lived OAuth database credential at runtime through the Databricks SDK. The App receives its Lakebase endpoint through the `postgres` App resource and also uses short-lived OAuth credentials.
+
+## Lakebase Change Data Feed and Gold Analytics
+
+Native Lakebase Change Data Feed is enabled for the operational tables required by the analytics workflow:
 
 - `fraud_alerts`
 - `investigations`
@@ -41,129 +68,132 @@ Planned source tables:
 - `agent_actions`
 - `alert_status_history`
 
-The CDF destination will be a Unity Catalog schema such as `finguard.lakebase_cdc`, with history tables such as:
+The corresponding Unity Catalog history tables are stored under the user-specific `_lakebase_cdc` schema.
 
-- `lb_fraud_alerts_history`
-- `lb_investigations_history`
-- `lb_investigation_notes_history`
-- `lb_agent_actions_history`
-- `lb_alert_status_history_history`
+`notebooks/06_cdc_analytics.py` reads insert and update-postimage records from the CDC history tables and refreshes `gold_alert_summary` with:
 
-CDF capture will run continuously. A downstream incremental Spark/Lakeflow analytics task will process newly captured changes approximately every **1 minute** and populate Gold application analytics such as alert summaries, agent activity, and investigation metrics.
+- alerts created
+- alerts escalated
+- alerts resolved
+- average investigation-resolution minutes
+- agent action count
+- agent action success rate
 
-If native Lakebase CDF is unavailable in the course workspace, Lakeflow Connect PostgreSQL CDC will be used as the fallback.
+The deployed CDC Analytics Refresh job is configured every **5 minutes** and is committed in a PAUSED state for cost control. It has also been run successfully manually.
 
-## Streaming Runtime and Operations
+## Transaction Streaming Runtime
 
-The optional Velocity implementation will use **Spark Structured Streaming** with a **10-second processing-time trigger**.
+`notebooks/05_streaming_risk_alerts.py` uses Spark Structured Streaming against the Silver transaction table.
 
-Initial runtime configuration:
+The final implementation uses:
 
-- Compute: dedicated Databricks Jobs compute
-- Driver: 1
-- Workers: 2 fixed workers
-- Autoscaling: disabled initially for predictable streaming behavior
-- Trigger: 10 seconds
-- Scale-up test target: 4 fixed workers if the initial cluster cannot sustain the p95 latency objective
+- Source: `silver_transactions`
+- Persistent checkpoint: `/Volumes/bootcamp_students/<username>_operations/checkpoints/transaction_risk_v1`
+- Trigger: `availableNow=True`
+- Historical compatibility: `skipChangeCommits=true` to move past earlier Silver MERGE history
+- Current Silver transaction writes: append-only and idempotent by `transaction_id`
+- Gold sink: idempotent Delta MERGE keyed by `transaction_id`
+- Lakebase sink: `INSERT ... ON CONFLICT DO UPDATE` with a unique `fraud_alerts.transaction_id`
 
-Each streaming query will use a separate Unity Catalog Volume checkpoint path, for example:
+This design supports reruns without creating duplicate business transactions or alerts.
+
+## Velocity Measurement
+
+The repository includes `notebooks/08_velocity_measurement.py` and a manual bundle job named **FinGuard - Velocity Validation**.
+
+The measurement harness:
+
+1. Appends timestamped probe events to an Operations Delta source table.
+2. Processes only new events using Spark Structured Streaming and a persistent checkpoint.
+3. Adds a processing timestamp in the streaming query.
+4. Calculates min, average, p95, and max event-processing latency.
+5. Persists each run to `bootcamp_students.<username>_operations.velocity_measurement_results`.
+6. Fails the job when the event count is incomplete or p95 latency is not below 60 seconds.
+
+The latency result must be captured from an actual Databricks run before claiming the Velocity rubric requirement as demonstrated.
+
+## Delta Data Pipeline
+
+The implemented pipeline is:
 
 ```text
-/Volumes/finguard/operations/checkpoints/transaction_risk_v1
-/Volumes/finguard/operations/checkpoints/cdc_alert_analytics_v1
+PaySim
+  -> Bronze transaction ingestion
+  -> Silver data quality + FX enrichment + behavioral features
+  -> Gold risk scoring
+  -> incremental Structured Streaming risk processing
+  -> Lakebase fraud alerts
 ```
 
-For transaction velocity calculations:
+Alpha Vantage FX data follows:
 
-- Risk window: 10 minutes
-- Event watermark: 30 minutes
-- Stateful processing: RocksDB state store where available
-
-The end-to-end p95 objective remains **under 60 seconds** from transaction arrival to fraud-alert persistence.
-
-### Idempotent Alert Strategy
-
-`transaction_id` will be the business key for transaction risk results and fraud alerts. Delta writes will use `MERGE`, while Lakebase will enforce a unique constraint on `fraud_alerts.transaction_id` and use PostgreSQL `INSERT ... ON CONFLICT DO UPDATE` behavior. Replaying a micro-batch therefore will not create duplicate alerts for the same transaction.
-
-## Delta Physical Design
-
-For new Delta tables, FinGuard will use liquid clustering where supported rather than relying on legacy static partitioning plus Z-ORDER.
-
-| Delta Table | Physical Design |
-| --- | --- |
-| `bronze_transactions` | `CLUSTER BY (event_date)` |
-| `silver_transactions` | `CLUSTER BY (event_date, customer_id)` |
-| `gold_transaction_risk` | `CLUSTER BY (event_date, customer_id)` |
-| `gold_customer_risk` | `CLUSTER BY (customer_id)` |
-| `gold_daily_transaction_metrics` | `CLUSTER BY (event_date)` |
-| `gold_alert_summary` | `CLUSTER BY (event_date)` |
-
-Predictive optimization/`OPTIMIZE` will be used where supported. If liquid clustering is unavailable in the course environment, the fallback is partitioning large transaction tables by `event_date` and using Z-ORDER/optimization on common filtering keys such as `customer_id`.
-
-## Lakebase Index Strategy
-
-Primary keys provide the base indexes. Additional indexes will support the alert queue, customer investigation history, case detail, AI context retrieval, and audit screens.
-
-```sql
-CREATE UNIQUE INDEX idx_fraud_alert_transaction
-ON fraud_alerts(transaction_id);
-
-CREATE INDEX idx_fraud_alert_customer
-ON fraud_alerts(customer_id);
-
-CREATE INDEX idx_fraud_alert_status
-ON fraud_alerts(status, created_at DESC);
-
-CREATE INDEX idx_fraud_alert_assignment
-ON fraud_alerts(assigned_to, status);
-
-CREATE INDEX idx_investigation_alert
-ON investigations(alert_id);
-
-CREATE INDEX idx_investigation_notes_case
-ON investigation_notes(investigation_id, created_at DESC);
-
-CREATE INDEX idx_agent_actions_alert
-ON agent_actions(alert_id, created_at DESC);
-
-CREATE INDEX idx_alert_history_alert
-ON alert_status_history(alert_id, changed_at DESC);
+```text
+Alpha Vantage REST API
+  -> Bronze API request audit
+  -> Silver normalized FX rates
+  -> transaction enrichment
 ```
+
+Bronze ingestion, Silver transactions, and quarantine handling are designed to be rerunnable and idempotent.
 
 ## AI Model, Tool Calling, and Guardrails
 
-FinGuard will use a Databricks-hosted instruction model through Foundation Model APIs / Unity AI Gateway. The initial plan is **Meta Llama 3.3 70B Instruct**, subject to model availability in the course workspace.
+FinGuard uses the Databricks-hosted model endpoint configured through the App resource `llm`. The validated endpoint configuration is `databricks-meta-llama-3-3-70b-instruct`.
 
-The agent will use an OpenAI-compatible function/tool-calling pattern. The model may request an approved function, but FinGuard application code performs the actual call after validation.
+The agent uses an OpenAI-compatible function/tool-calling interface. The model may request only functions exposed in the allowlist, and application code executes the call after validation.
 
-Write-action guardrails:
+Implemented guardrails:
 
-1. No arbitrary SQL execution tool is exposed to the model.
-2. Only predefined and allowlisted tools are available.
-3. Tool arguments are validated against strict schemas.
-4. The authenticated user's role is checked server-side.
-5. The current alert/investigation state is validated before mutation.
-6. High-impact actions such as escalation or resolution require confirmation.
+1. No arbitrary SQL tool is exposed to the model.
+2. Only predefined tool names are accepted.
+3. Tool arguments use strict JSON schemas.
+4. Application roles are checked server-side.
+5. Current alert state and allowed status transitions are validated.
+6. Escalation and resolution require explicit analyst confirmation.
 7. Writes execute through controlled service functions and database transactions.
-8. Every write is recorded in `agent_actions` for auditability.
+8. Write actions are recorded in `agent_actions`.
+9. Alert lifecycle changes are recorded in `alert_status_history`.
 
-The audit record will include the actor, model/agent, tool name, parameters, affected alert or investigation, execution status, and timestamp.
+## Final Automation
 
-## Updated End-to-End Path
+The final Databricks bundle defines four jobs:
+
+- **FinGuard - Main Transaction Pipeline**
+- **FinGuard - FX Refresh**
+- **FinGuard - CDC Analytics Refresh**
+- **FinGuard - Velocity Validation**
+
+The first three were deployed and tested as part of the final capstone run. The Velocity Validation job is a manual evidence job and should be deployed and executed before final submission if the project will claim the Velocity Big Data V.
+
+## Final Validated Results
+
+The final end-to-end pipeline validation recorded:
+
+- Bronze rows: **6,362,620**
+- Unique Bronze transaction IDs: **6,362,620**
+- Silver valid transactions: **6,362,604**
+- Distinct quarantined transactions: **16**
+- Gold risk-scored transactions: **6,362,604**
+- Alert candidates at score >= 50: **3,021**
+- Latest pipeline validation: **22 PASS / 0 FAIL / ALL PASS**
+- Demo operational changes captured by CDC: **1 escalation, 1 resolution**
+- Agent actions captured in the validated demo: **6**
+- Agent action success rate: **100%**
+
+## Final End-to-End Path
 
 ```text
-Transactions
-  -> 10-second Structured Streaming
-  -> Bronze
-  -> Silver validation/enrichment
-  -> Risk scoring
-  -> gold_transaction_risk
-  -> idempotent Lakebase fraud_alert upsert
-  -> analyst investigation in Streamlit Databricks App
+PaySim + Alpha Vantage
+  -> Bronze Delta
+  -> Silver DQ / FX / behavioral features
+  -> Gold risk scoring
+  -> checkpointed Structured Streaming
+  -> Lakebase operational alerts
+  -> Streamlit Databricks App
   -> controlled AI tool calls
-  -> Lakebase operational updates
+  -> Lakebase operational changes
   -> Lakebase CDF
-  -> Delta CDC history
-  -> 1-minute incremental analytics
-  -> Gold application/agent analytics
+  -> Unity Catalog CDC history
+  -> Gold operational analytics
+  -> automated validation
 ```
