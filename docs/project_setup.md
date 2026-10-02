@@ -31,11 +31,12 @@ bootcamp_students.premetl9_lakebase_cdc
 7. Create Lakebase tables with `sql/create_lakebase_tables.sql`.
 8. Run `notebooks/05_streaming_risk_alerts.py` with Lakebase runtime parameters.
 9. Configure Lakebase Change Data Feed.
-10. Run `notebooks/06_cdc_analytics.py`.
+10. Run `notebooks/09_incremental_cdc_analytics.py` for the final incremental CDC implementation. `notebooks/06_cdc_analytics.py` remains available as the earlier full-refresh reference.
 11. Run `notebooks/07_pipeline_validation.py`.
 12. Deploy the repository root as the Databricks App.
 13. Deploy the Databricks bundle from `databricks.yml`.
 14. Run `notebooks/08_velocity_measurement.py` or the **FinGuard - Velocity Validation** job to capture measured latency evidence.
+15. Run `notebooks/10_performance_evidence.py` or **FinGuard - Performance Evidence** once to capture table-scale and query-performance evidence.
 
 ## Lakebase
 
@@ -81,7 +82,7 @@ Register authorized FinGuard users in Lakebase with one of:
 
 ## Bundle Jobs
 
-The final bundle defines four jobs:
+The final bundle defines five jobs:
 
 ### FinGuard - Main Transaction Pipeline
 
@@ -125,6 +126,16 @@ Default parameters:
 probe_events = 10
 sla_seconds  = 60
 ```
+
+### FinGuard - Performance Evidence
+
+Manual evidence job that records row counts, Delta file counts, table byte sizes, clustering metadata, and representative Spark query timings for Bronze, Silver, and Gold. Results are persisted to:
+
+```text
+bootcamp_students.<username>_operations.performance_evidence_results
+```
+
+### Velocity Results
 
 The job persists results to:
 
