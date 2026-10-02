@@ -185,14 +185,14 @@ ALL PASS
 
 ## Databricks App Deployment Evidence
 
-Before submission, capture the Databricks **Apps > FinGuard** deployment page showing:
+The Databricks App deployment has been verified from **Apps > FinGuard** with:
 
-- App name: FinGuard
-- Status: Running
-- Deployment URL
-- Latest successful deployment
+- App name: **finguard**
+- Status: **Running**
+- Deployment URL: `https://finguard-1352785079224954.aws.databricksapps.com`
+- Latest deployment: **Active**
 
-Also capture the running application dashboard. Add the deployment URL to the final submission document only from the Databricks UI; do not guess the URL from the workspace host.
+The submission evidence should include both the deployment overview screen and the running dashboard.
 
 ## Local Development
 
