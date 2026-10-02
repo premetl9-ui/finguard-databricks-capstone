@@ -2,46 +2,161 @@
 
 ## Data Sources
 
-- PaySim synthetic financial transaction dataset (6M+ records target).
-- Alpha Vantage FX/market REST API.
-- User and operational interactions from analysts and the AI agent.
+- PaySim synthetic financial transactions: **6,362,620 Bronze records** in the validated run.
+- Alpha Vantage FX REST API for USD/EUR, USD/GBP, and USD/JPY.
+- Analyst and AI-agent operational activity stored in Lakebase.
 
 ## Databricks Lakehouse
 
 ### Bronze
-- Raw transactions.
-- Raw API JSON.
-- Append-only ingestion for replay and traceability.
+
+- `bronze_transactions`: deterministic transaction IDs, raw financial attributes, source metadata, ingestion timestamp.
+- `bronze_fx_api`: auditable Alpha Vantage requests, responses, status, and errors.
+- Bronze transaction ingestion is append-only and idempotent by `transaction_id`.
 
 ### Silver
-- Data cleaning and standardization.
+
+- Data cleaning and normalization.
+- Explicit data-quality contract and quarantine.
 - FX enrichment.
-- Derived risk features.
-- Merchant categorization.
-- Data-quality validation and anomaly checks.
+- Customer behavioral features.
+- Merchant/transaction categorization.
+- Append-only immutable transaction events for downstream streaming compatibility.
+
+Validated results:
+
+- **6,362,604** valid Silver transactions.
+- **16** distinct quarantined transactions.
 
 ### Gold
-- Transaction risk scores.
-- Customer 360 / customer risk profile.
-- Alert candidates.
-- Aggregations and summary metrics.
 
-## AI/ML
+- `gold_transaction_risk`: transaction risk score, risk level, reasons, and alert-candidate flag.
+- `gold_alert_summary`: CDC-derived operational analytics.
 
-Risk scoring uses transparent rules initially, with the option to extend to an ML model. Model serving can provide real-time scoring for application use.
+Validated risk-scored rows: **6,362,604**.
+
+## Risk Scoring
+
+The final deterministic score uses:
+
+- amount >= 3x customer average: +30
+- multiple transactions in a short window: +20
+- new destination/account: +15
+- unusual transaction type: +15
+- international transaction: +10
+- high-value transaction: +10
+
+Risk bands:
+
+```text
+0-29    LOW
+30-59   MEDIUM
+60-79   HIGH
+80-100  CRITICAL
+```
+
+The capstone alert threshold is **50**, producing **3,021** alert candidates in the validated dataset.
 
 ## Lakebase
 
-Operational tables include users, customers, fraud alerts, investigations, investigation notes, agent actions, and alert status history.
+Lakebase provides operational application state for:
 
-## CDC / Analytics
+- users
+- customers
+- fraud alerts
+- investigations
+- investigation notes
+- agent actions
+- alert status history
 
-Lakebase changes are captured into Delta history tables. Spark/Lakeflow transforms these records into agent activity, alert lifecycle, analyst/user, and data-change metrics.
+The schema includes relational keys, constraints, timestamps, triggers, and indexes. Fraud alerts enforce a unique business key on `transaction_id`.
 
-## Databricks App
+## AI Investigator
 
-The frontend provides a real-time dashboard, alert/investigation workflow, AI investigator, analytics/reports, and user management.
+The Databricks App uses a Databricks-hosted model endpoint and an allowlisted tool layer.
 
-## Velocity Target
+The agent can retrieve:
 
-If Velocity is claimed, the target is under 60 seconds p95 from transaction arrival to fraud-alert persistence using Spark Structured Streaming with a 10-second micro-batch trigger. Alpha Vantage enrichment is cached and is not part of the streaming latency SLA.
+- alerts
+- open-alert queues
+- transactions
+- customer transaction history
+- customer risk profiles
+- cached FX rates
+- investigation notes
+
+The agent can perform controlled writes:
+
+- create investigation
+- assign alert
+- add investigation note
+- escalate alert
+- resolve alert
+- validated status transitions
+
+High-impact actions require explicit confirmation. Write activity is audited.
+
+## CDC / Operational Analytics
+
+Lakebase Change Data Feed captures operational changes into Unity Catalog history tables. `notebooks/06_cdc_analytics.py` transforms post-images into Gold metrics including escalations, resolutions, investigation duration, agent action count, and tool success rate.
+
+The CDC Analytics Refresh bundle job is configured every **5 minutes** and is intentionally committed PAUSED.
+
+## Structured Streaming
+
+`notebooks/05_streaming_risk_alerts.py` reads Silver incrementally with a persistent checkpoint and an `availableNow` trigger. Current Silver writes are append-only; `skipChangeCommits` is used only to advance past historical MERGE commits created before the final design was adopted.
+
+## Big Data Evidence
+
+### Volume
+
+FinGuard clearly demonstrates Volume:
+
+- **6,362,620** Bronze rows
+- **6,362,604** Silver rows
+- **6,362,604** Gold risk rows
+
+### Velocity
+
+`notebooks/08_velocity_measurement.py` is a dedicated repeatable measurement harness. It records p95 processing latency for timestamped probe events processed through checkpointed Structured Streaming.
+
+Velocity should be claimed in the final submission only after a Databricks run shows **p95 < 60 seconds** and the result is captured as evidence.
+
+## End-to-End Flow
+
+```text
+PaySim + Alpha Vantage
+        |
+        v
+Bronze Delta
+        |
+        v
+Silver DQ + FX + Behavioral Features
+        |
+        v
+Gold Risk Scoring
+        |
+        v
+Checkpointed Structured Streaming
+        |
+        v
+Lakebase Fraud Alerts
+        |
+        +--> Databricks App --> AI Investigator
+        |                         |
+        |                         +--> controlled write actions
+        |                                  |
+        +----------------------------------+
+        |
+        v
+Lakebase Change Data Feed
+        |
+        v
+Unity Catalog CDC History
+        |
+        v
+Gold Operational Analytics
+        |
+        v
+Automated Pipeline Validation
+```
