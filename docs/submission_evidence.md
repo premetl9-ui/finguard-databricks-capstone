@@ -15,9 +15,9 @@ This file maps the final capstone implementation to evidence that should be incl
 - Latest automated validation detail rows.
 - Latest automated validation summary: **22 total / 22 PASS / 0 FAIL / ALL PASS**.
 
-## Databricks App Deployment Evidence — Still Required
+## Databricks App Deployment Evidence — Captured
 
-Capture one screenshot from:
+Captured from:
 
 ```text
 Databricks
@@ -25,16 +25,14 @@ Databricks
   -> FinGuard
 ```
 
-The screenshot should visibly include:
+The captured deployment evidence visibly includes:
 
-- **App name:** FinGuard
+- **App name:** finguard
 - **Status:** Running
-- **Deployment URL**
-- Latest successful deployment information, if visible
+- **Deployment URL:** `https://finguard-1352785079224954.aws.databricksapps.com`
+- Latest deployment marked **Active**
 
-Also copy the exact application URL from the Databricks UI into the final submission form/document.
-
-Do not infer or construct the URL from the workspace hostname.
+A second screenshot captures the running FinGuard dashboard at the same URL.
 
 ## Big Data V #1 — Volume
 
