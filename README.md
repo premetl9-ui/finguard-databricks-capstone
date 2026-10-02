@@ -277,7 +277,7 @@ and fails unless all probe events are processed with:
 p95_latency_seconds < 60
 ```
 
-Velocity should be claimed in the final submission only after an actual Databricks run records `status = PASS` and the measured p95 result is captured as evidence.
+Velocity is now **demonstrated with measured evidence**. Two checkpointed Structured Streaming probe runs completed successfully. The latest clean run processed **10/10 input rows**, used **batch_id = 1** on the existing checkpoint, and recorded **p95 latency = 11.582 seconds**, well below the 60-second rubric threshold. The previous run recorded **9.242 seconds p95**.
 
 ## Deployment Evidence
 
