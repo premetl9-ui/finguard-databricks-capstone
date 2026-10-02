@@ -56,6 +56,11 @@ CHECKPOINT = (
     "/checkpoints/transaction_risk_v1"
 )
 
+STREAM_METRICS = (
+    f"{CATALOG}.{OPERATIONS_SCHEMA}."
+    "streaming_batch_metrics"
+)
+
 # Match the corrected threshold used in notebook 03.
 ALERT_THRESHOLD = 50
 
@@ -324,6 +329,13 @@ def process_microbatch(batch_df, batch_id: int):
     if batch_df.isEmpty():
         return
 
+    import time
+    from datetime import datetime, timezone
+    from pyspark.sql import types as LocalT
+
+    batch_started_at = datetime.now(timezone.utc)
+    batch_started_perf = time.perf_counter()
+
     batch_df = batch_df.filter(F.col("data_quality_status").isin("VALID", "STALE_FX_RATE"))
     scored = score_batch(batch_df)
 
@@ -342,17 +354,69 @@ def process_microbatch(batch_df, batch_id: int):
     alerts = scored.filter("is_alert_candidate").select(
         "transaction_id", "customer_id", "risk_score", "risk_level", "risk_reasons"
     )
-    if not alerts.isEmpty():
+
+    scored_rows = scored.count()
+    alert_rows = alerts.count()
+
+    lakebase_write_started = time.perf_counter()
+    if alert_rows > 0:
         write_alert_rows(alerts)
+    lakebase_write_seconds = time.perf_counter() - lakebase_write_started
 
     latency = scored.select(
         F.expr("percentile_approx(unix_timestamp(scored_at) - unix_timestamp(processed_at), 0.95)").alias(
             "p95_seconds"
         )
     ).first()["p95_seconds"]
+
+    batch_duration_seconds = time.perf_counter() - batch_started_perf
+    batch_finished_at = datetime.now(timezone.utc)
+
+    metrics_schema = LocalT.StructType(
+        [
+            LocalT.StructField("batch_id", LocalT.LongType(), False),
+            LocalT.StructField("started_at", LocalT.TimestampType(), False),
+            LocalT.StructField("finished_at", LocalT.TimestampType(), False),
+            LocalT.StructField("scored_rows", LocalT.LongType(), False),
+            LocalT.StructField("alert_rows", LocalT.LongType(), False),
+            LocalT.StructField("silver_to_score_p95_seconds", LocalT.DoubleType(), True),
+            LocalT.StructField("lakebase_write_seconds", LocalT.DoubleType(), False),
+            LocalT.StructField("batch_duration_seconds", LocalT.DoubleType(), False),
+            LocalT.StructField("checkpoint_path", LocalT.StringType(), False),
+            LocalT.StructField("status", LocalT.StringType(), False),
+        ]
+    )
+
+    metrics_row = [
+        (
+            int(batch_id),
+            batch_started_at,
+            batch_finished_at,
+            int(scored_rows),
+            int(alert_rows),
+            float(latency) if latency is not None else None,
+            float(lakebase_write_seconds),
+            float(batch_duration_seconds),
+            CHECKPOINT,
+            "SUCCESS",
+        )
+    ]
+
+    (
+        batch_spark.createDataFrame(
+            metrics_row,
+            schema=metrics_schema,
+        )
+        .write.format("delta")
+        .mode("append")
+        .saveAsTable(STREAM_METRICS)
+    )
+
     print(
-        f"batch_id={batch_id}, scored={scored.count()}, alerts={alerts.count()}, "
-        f"silver_to_score_p95_seconds={latency}"
+        f"batch_id={batch_id}, scored={scored_rows}, alerts={alert_rows}, "
+        f"silver_to_score_p95_seconds={latency}, "
+        f"lakebase_write_seconds={lakebase_write_seconds:.3f}, "
+        f"batch_duration_seconds={batch_duration_seconds:.3f}"
     )
 
 
