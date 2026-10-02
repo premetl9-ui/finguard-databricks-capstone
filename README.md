@@ -194,7 +194,7 @@ The notebook uses the Databricks SDK to generate a short-lived OAuth database cr
 ├── app/                    # Streamlit UI and app services
 ├── config/                 # Non-secret example configuration
 ├── docs/                   # Architecture and project documentation
-├── notebooks/              # Databricks notebook-source pipelines 01-08
+├── notebooks/              # Databricks notebook-source pipelines 01-10
 ├── sql/                    # Delta, Lakebase, and analytics SQL
 ├── src/finguard/           # Reusable Python services
 ├── tests/                  # Unit tests
@@ -233,12 +233,13 @@ The Alpha Vantage API key is stored in the Databricks secret scope `premetl9-dat
 
 FinGuard includes a Declarative Automation Bundle in `databricks.yml` and an automated validation notebook in `notebooks/07_pipeline_validation.py`.
 
-The bundle defines four Lakeflow Jobs:
+The bundle defines five Lakeflow Jobs:
 
 - **FinGuard - Main Transaction Pipeline**: Bronze ingestion and FX refresh run first, Silver waits for both, then Gold scoring, Lakebase alert writing, and automated validation run in sequence.
 - **FinGuard - FX Refresh**: refreshes USD/EUR, USD/GBP, and USD/JPY every six hours.
 - **FinGuard - CDC Analytics Refresh**: refreshes Lakebase CDC operational analytics every five minutes.
 - **FinGuard - Velocity Validation**: manual evidence job that measures checkpointed Structured Streaming latency and fails unless p95 is below 60 seconds.
+- **FinGuard - Performance Evidence**: manual evidence job that records 6.36M-row table scale, Delta file/size metadata, clustering metadata, and representative Spark query timings.
 
 The schedules are intentionally committed as `PAUSED` so cloning or deploying the repository does not immediately create recurring compute usage. After configuring `lakebase_endpoint`, validate and deploy the bundle, test each job once, and then unpause the schedules in the Databricks Jobs UI or change `pause_status` to `UNPAUSED`.
 
@@ -259,7 +260,22 @@ databricks bundle run finguard_main_pipeline
 databricks bundle run finguard_fx_refresh
 databricks bundle run finguard_cdc_analytics
 databricks bundle run finguard_velocity_validation
+databricks bundle run finguard_performance_evidence
 ```
+
+## Incremental CDC Analytics
+
+The deployed **FinGuard - CDC Analytics Refresh** job now runs `notebooks/09_incremental_cdc_analytics.py`. The notebook persists a watermark per CDC source, re-reads a five-minute overlap window to tolerate late or same-timestamp changes, MERGEs compact fact tables by event/business key, and writes run-level monitoring to `cdc_analytics_run_history`. Gold operational analytics are refreshed from the compact incremental fact state rather than rescanning raw CDC history on every run.
+
+The original `notebooks/06_cdc_analytics.py` is retained as the earlier full-refresh reference implementation.
+
+Notebook 05 also persists production streaming-batch monitoring to:
+
+```text
+bootcamp_students.<username>_operations.streaming_batch_metrics
+```
+
+including batch ID, scored rows, alert rows, Silver-to-score p95 latency, Lakebase write duration, total batch duration, checkpoint path, and status.
 
 ## Big Data Evidence
 
