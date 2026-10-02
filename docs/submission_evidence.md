@@ -114,3 +114,41 @@ LIMIT 10;
 ## Final Evidence Rule
 
 Velocity can now be claimed as demonstrated: the measured Databricks runs passed with p95 well under 60 seconds, and the clean rerun records 10 source input rows with batch_id 1 on the persistent checkpoint.
+
+
+## Incremental CDC Evidence — Added
+
+The deployed CDC Analytics Refresh job now uses `notebooks/09_incremental_cdc_analytics.py`.
+
+Capture after the first successful run:
+
+- `cdc_analytics_state` showing one watermark per source.
+- `cdc_analytics_run_history` showing a successful run.
+- Gold `gold_alert_summary` results after the incremental refresh.
+
+A second run with no new operational changes should succeed without duplicating fact rows, demonstrating re-runnability and idempotence.
+
+## Performance Evidence — Added
+
+Run **FinGuard - Performance Evidence** once and capture:
+
+- Bronze, Silver, and Gold row counts.
+- Delta `num_files` and `size_bytes`.
+- Clustering-column metadata.
+- Representative count, risk-distribution, and customer-lookup timings.
+
+Results are stored in:
+
+```text
+bootcamp_students.premetl9_operations.performance_evidence_results
+```
+
+## Production Streaming Monitoring — Added
+
+When notebook 05 processes a non-empty Silver micro-batch, it appends one row to:
+
+```text
+bootcamp_students.premetl9_operations.streaming_batch_metrics
+```
+
+with batch ID, scored rows, alert rows, Silver-to-score p95 latency, Lakebase write duration, batch duration, checkpoint path, and status.
