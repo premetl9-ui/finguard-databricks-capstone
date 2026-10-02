@@ -22,6 +22,7 @@ The completed project run validated the following results:
 | Demo alert resolutions captured by CDC | 1 |
 | AI agent actions captured | 6 |
 | Agent action success rate in validated demo | 100% |
+| Automated pipeline validation | 22 PASS / 0 FAIL / ALL PASS |
 
 ## Architecture
 
@@ -193,7 +194,7 @@ The notebook uses the Databricks SDK to generate a short-lived OAuth database cr
 ├── app/                    # Streamlit UI and app services
 ├── config/                 # Non-secret example configuration
 ├── docs/                   # Architecture and project documentation
-├── notebooks/              # Databricks notebook-source pipelines 01-06
+├── notebooks/              # Databricks notebook-source pipelines 01-08
 ├── sql/                    # Delta, Lakebase, and analytics SQL
 ├── src/finguard/           # Reusable Python services
 ├── tests/                  # Unit tests
@@ -232,11 +233,12 @@ The Alpha Vantage API key is stored in the Databricks secret scope `premetl9-dat
 
 FinGuard includes a Declarative Automation Bundle in `databricks.yml` and an automated validation notebook in `notebooks/07_pipeline_validation.py`.
 
-The bundle defines three Lakeflow Jobs:
+The bundle defines four Lakeflow Jobs:
 
 - **FinGuard - Main Transaction Pipeline**: Bronze ingestion and FX refresh run first, Silver waits for both, then Gold scoring, Lakebase alert writing, and automated validation run in sequence.
 - **FinGuard - FX Refresh**: refreshes USD/EUR, USD/GBP, and USD/JPY every six hours.
 - **FinGuard - CDC Analytics Refresh**: refreshes Lakebase CDC operational analytics every five minutes.
+- **FinGuard - Velocity Validation**: manual evidence job that measures checkpointed Structured Streaming latency and fails unless p95 is below 60 seconds.
 
 The schedules are intentionally committed as `PAUSED` so cloning or deploying the repository does not immediately create recurring compute usage. After configuring `lakebase_endpoint`, validate and deploy the bundle, test each job once, and then unpause the schedules in the Databricks Jobs UI or change `pause_status` to `UNPAUSED`.
 
@@ -256,7 +258,30 @@ databricks bundle deploy
 databricks bundle run finguard_main_pipeline
 databricks bundle run finguard_fx_refresh
 databricks bundle run finguard_cdc_analytics
+databricks bundle run finguard_velocity_validation
 ```
+
+## Big Data Evidence
+
+FinGuard demonstrates **Volume** with more than 6.36 million transactions processed through Bronze, Silver, and Gold.
+
+The repository also includes `notebooks/08_velocity_measurement.py` and the manual **FinGuard - Velocity Validation** job. The job inserts timestamped probe events into an Operations Delta source, processes them through checkpointed Spark Structured Streaming, measures min/average/p95/max processing latency, persists the run to:
+
+```text
+bootcamp_students.<username>_operations.velocity_measurement_results
+```
+
+and fails unless all probe events are processed with:
+
+```text
+p95_latency_seconds < 60
+```
+
+Velocity should be claimed in the final submission only after an actual Databricks run records `status = PASS` and the measured p95 result is captured as evidence.
+
+## Deployment Evidence
+
+The Databricks App is deployed and the application workflow has been exercised. Before final submission, capture the **Apps > FinGuard** deployment screen showing the app's **Running** status and deployment URL, together with the running dashboard. The URL should be copied from Databricks rather than inferred from the workspace host.
 
 The validation notebook writes an audit history to:
 
