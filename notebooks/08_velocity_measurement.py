@@ -281,11 +281,24 @@ avg_latency = float(metrics["avg_latency_seconds"] or 0.0)
 p95_latency = float(metrics["p95_latency_seconds"] or 0.0)
 max_latency = float(metrics["max_latency_seconds"] or 0.0)
 
-input_rows = int(progress.get("numInputRows", 0) or 0)
-batch_id = int(progress.get("batchId", -1) or -1)
+source_input_rows = sum(
+    int(source.get("numInputRows", 0) or 0)
+    for source in progress.get("sources", [])
+)
+
+top_level_input_rows = progress.get("numInputRows")
+input_rows = (
+    int(top_level_input_rows)
+    if top_level_input_rows is not None
+    else source_input_rows
+)
+
+raw_batch_id = progress.get("batchId")
+batch_id = int(raw_batch_id) if raw_batch_id is not None else -1
 
 passed = (
     event_count == PROBE_EVENTS
+    and input_rows == PROBE_EVENTS
     and p95_latency < SLA_SECONDS
 )
 
@@ -380,6 +393,7 @@ if not passed:
     raise RuntimeError(
         "FinGuard velocity validation failed: "
         f"event_count={event_count}/{PROBE_EVENTS}, "
+        f"input_rows={input_rows}/{PROBE_EVENTS}, "
         f"p95={p95_latency:.3f}s, "
         f"required p95<{SLA_SECONDS:.1f}s"
     )
