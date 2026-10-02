@@ -96,7 +96,7 @@ resources:
       tasks:
         - task_key: refresh_cdc_analytics
           notebook_task:
-            notebook_path: ./notebooks/06_cdc_analytics.py
+            notebook_path: ./notebooks/09_incremental_cdc_analytics.py
 
     finguard_velocity_validation:
       name: FinGuard - Velocity Validation
@@ -108,6 +108,14 @@ resources:
             base_parameters:
               probe_events: "10"
               sla_seconds: "60"
+
+    finguard_performance_evidence:
+      name: FinGuard - Performance Evidence
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: capture_lakehouse_performance
+          notebook_task:
+            notebook_path: ./notebooks/10_performance_evidence.py
 
 targets:
   dev:
