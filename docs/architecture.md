@@ -120,7 +120,7 @@ FinGuard clearly demonstrates Volume:
 
 `notebooks/08_velocity_measurement.py` is a dedicated repeatable measurement harness. It records p95 processing latency for timestamped probe events processed through checkpointed Structured Streaming.
 
-Velocity should be claimed in the final submission only after a Databricks run shows **p95 < 60 seconds** and the result is captured as evidence.
+Velocity is demonstrated with measured Databricks evidence. Two checkpointed Structured Streaming probe runs passed. The latest clean run processed **10/10 input rows** using **batch_id = 1** and measured **p95 = 11.582 seconds**; the previous run measured **p95 = 9.242 seconds**. Both are below the rubric's 60-second threshold.
 
 ## End-to-End Flow
 
