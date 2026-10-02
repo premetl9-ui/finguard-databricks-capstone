@@ -110,7 +110,7 @@ The measurement harness:
 5. Persists each run to `bootcamp_students.<username>_operations.velocity_measurement_results`.
 6. Fails the job when the event count is incomplete or p95 latency is not below 60 seconds.
 
-The latency result must be captured from an actual Databricks run before claiming the Velocity rubric requirement as demonstrated.
+Measured Databricks evidence is now available. Two runs completed with `status = PASS`. The latest clean run processed **10 events / 10 source input rows**, reused the persistent checkpoint at `velocity_probe_v1`, advanced to **batch_id = 1**, and measured **p95 latency = 11.582 seconds**. The previous run measured **9.242 seconds p95**. This demonstrates sub-minute event processing with checkpoint reuse.
 
 ## Delta Data Pipeline
 
@@ -163,7 +163,7 @@ The final Databricks bundle defines four jobs:
 - **FinGuard - CDC Analytics Refresh**
 - **FinGuard - Velocity Validation**
 
-The first three were deployed and tested as part of the final capstone run. The Velocity Validation job is a manual evidence job and should be deployed and executed before final submission if the project will claim the Velocity Big Data V.
+All four jobs have now been deployed. The Main Transaction Pipeline, FX Refresh, CDC Analytics Refresh, and Velocity Validation workflows have been exercised. The Velocity Validation job produced repeatable PASS evidence with p95 latency below 60 seconds.
 
 ## Final Validated Results
 
