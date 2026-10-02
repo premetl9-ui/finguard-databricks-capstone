@@ -281,7 +281,13 @@ Velocity should be claimed in the final submission only after an actual Databric
 
 ## Deployment Evidence
 
-The Databricks App is deployed and the application workflow has been exercised. Before final submission, capture the **Apps > FinGuard** deployment screen showing the app's **Running** status and deployment URL, together with the running dashboard. The URL should be copied from Databricks rather than inferred from the workspace host.
+The Databricks App deployment has been verified in the workspace with **Status: Running**. The validated application URL is:
+
+```text
+https://finguard-1352785079224954.aws.databricksapps.com
+```
+
+Submission evidence includes both the Databricks App deployment page and the running FinGuard dashboard.
 
 The validation notebook writes an audit history to:
 
