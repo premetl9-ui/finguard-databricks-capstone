@@ -81,6 +81,26 @@ The corresponding Unity Catalog history tables are stored under the user-specifi
 
 The deployed CDC Analytics Refresh job is configured every **5 minutes** and is committed in a PAUSED state for cost control. The final deployed implementation is `notebooks/09_incremental_cdc_analytics.py`, which uses per-source watermarks, a five-minute overlap window, idempotent MERGE fact tables, and `cdc_analytics_run_history` monitoring. `notebooks/06_cdc_analytics.py` is retained as the earlier full-refresh reference implementation.
 
+## Incremental CDC Validation Evidence
+
+Two consecutive incremental CDC executions completed successfully.
+
+The initialization run read 3,025 alert CDC rows, 4 status rows, 1 investigation row, and 6 action rows. The second run, using persisted watermarks plus the five-minute overlap, read only 4 alert rows, 4 status rows, 1 investigation row, and 4 action rows. After both runs, the compact fact tables remained stable at **3,021 alert facts, 4 status facts, 1 investigation fact, and 6 action facts**, with two Gold metric dates.
+
+This demonstrates the intended re-runnable behavior: overlapping source rows are safely re-read and MERGEd without duplicate fact growth. Watermarks are persisted for all four CDC sources.
+
+## Performance Validation Evidence
+
+The manual performance evidence job measured:
+
+- Bronze: **6,362,620 rows**, 4 Delta files, 391,953,413 bytes, clustered by `event_date`, count query about **1.256 s**.
+- Silver: **6,362,604 rows**, 6 Delta files, 370,860,036 bytes, clustered by `event_date, customer_id`, count query about **0.498 s**.
+- Gold risk: **6,362,604 rows**, 5 Delta files, 323,735,556 bytes, clustered by `event_date, customer_id`, count query about **0.449 s**.
+- Gold risk distribution query: about **2.714 s**.
+- Customer-risk lookup query: about **1.836 s**.
+
+These measurements provide explicit scale and physical-layout evidence for the high-volume workflow.
+
 ## Transaction Streaming Runtime
 
 `notebooks/05_streaming_risk_alerts.py` uses Spark Structured Streaming against the Silver transaction table.
@@ -166,7 +186,7 @@ The final Databricks bundle defines five jobs:
 - **FinGuard - Velocity Validation**
 - **FinGuard - Performance Evidence**
 
-The bundle now defines five jobs. The Main Transaction Pipeline, FX Refresh, CDC Analytics Refresh, and Velocity Validation workflows have been exercised; the Performance Evidence job is an isolated manual evidence workflow that should be run once before final submission. The Main Transaction Pipeline, FX Refresh, CDC Analytics Refresh, and Velocity Validation workflows have been exercised. The Velocity Validation job produced repeatable PASS evidence with p95 latency below 60 seconds.
+All five bundle jobs are now implemented. Main Transaction Pipeline, FX Refresh, CDC Analytics Refresh, Velocity Validation, and Performance Evidence have been exercised. Velocity produced repeatable PASS evidence below 60 seconds; incremental CDC completed two SUCCESS runs without duplicate fact growth; Performance Evidence captured row counts, Delta physical metadata, and representative Spark query timings.
 
 ## Final Validated Results
 
