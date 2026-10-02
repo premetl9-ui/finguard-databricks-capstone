@@ -98,7 +98,7 @@ High-impact actions require explicit confirmation. Write activity is audited.
 
 ## CDC / Operational Analytics
 
-Lakebase Change Data Feed captures operational changes into Unity Catalog history tables. `notebooks/06_cdc_analytics.py` transforms post-images into Gold metrics including escalations, resolutions, investigation duration, agent action count, and tool success rate.
+Lakebase Change Data Feed captures operational changes into Unity Catalog history tables. `notebooks/09_incremental_cdc_analytics.py` is the deployed CDC analytics implementation. It persists per-source watermarks, uses a five-minute overlap/lookback window, MERGEs idempotent compact fact tables, records run-monitoring history, and refreshes Gold metrics including escalations, resolutions, investigation duration, agent action count, and tool success rate. `notebooks/06_cdc_analytics.py` remains as the earlier full-refresh reference implementation.
 
 The CDC Analytics Refresh bundle job is configured every **5 minutes** and is intentionally committed PAUSED.
 
@@ -119,6 +119,8 @@ FinGuard clearly demonstrates Volume:
 ### Velocity
 
 `notebooks/08_velocity_measurement.py` is a dedicated repeatable measurement harness. It records p95 processing latency for timestamped probe events processed through checkpointed Structured Streaming.
+
+Production streaming also records batch-level monitoring in `streaming_batch_metrics`, including scored rows, alert rows, Silver-to-score p95 latency, Lakebase write duration, and total batch duration.
 
 Velocity is demonstrated with measured Databricks evidence. Two checkpointed Structured Streaming probe runs passed. The latest clean run processed **10/10 input rows** using **batch_id = 1** and measured **p95 = 11.582 seconds**; the previous run measured **p95 = 9.242 seconds**. Both are below the rubric's 60-second threshold.
 
