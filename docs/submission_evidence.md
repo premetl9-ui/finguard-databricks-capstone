@@ -46,7 +46,7 @@ Gold risk-scored rows:       6,362,604
 Distinct quarantined rows:          16
 ```
 
-## Big Data V #2 — Velocity Measurement
+## Big Data V #2 — Velocity Measurement — Captured
 
 The repository includes:
 
@@ -65,30 +65,32 @@ The test:
 6. Persists the result to `velocity_measurement_results`.
 7. Fails unless all probe events are processed and p95 latency is below 60 seconds.
 
-### Evidence to Capture After Running
+### Captured Velocity Evidence
 
-Take screenshots showing:
+Two runs are present in `bootcamp_students.premetl9_operations.velocity_measurement_results`.
 
-- **FinGuard - Velocity Validation** job status = **Succeeded**.
-- Notebook output containing:
-  - event count
-  - min latency
-  - average latency
-  - p95 latency
-  - max latency
-  - PASS status
-- Latest row from:
+Latest clean run:
 
 ```text
-bootcamp_students.premetl9_operations.velocity_measurement_results
+event_count          = 10
+min_latency_seconds  = 11.582
+avg_latency_seconds  = 11.582
+p95_latency_seconds  = 11.582
+max_latency_seconds  = 11.582
+input_rows           = 10
+batch_id             = 1
+status               = PASS
 ```
 
-with:
+Previous run:
 
 ```text
-status = PASS
-p95_latency_seconds < 60
+event_count          = 10
+p95_latency_seconds  = 9.242
+status               = PASS
 ```
+
+The latest run reuses the persistent checkpoint and advances the Structured Streaming batch ID, strengthening the evidence for reliable incremental processing.
 
 Suggested SQL:
 
@@ -111,4 +113,4 @@ LIMIT 10;
 
 ## Final Evidence Rule
 
-Only claim the Velocity Big Data V after the measured Databricks run succeeds. Until then, the code demonstrates the measurement capability but not the measured sub-minute result.
+Velocity can now be claimed as demonstrated: the measured Databricks runs passed with p95 well under 60 seconds, and the clean rerun records 10 source input rows with batch_id 1 on the persistent checkpoint.
